@@ -1,0 +1,50 @@
+# Compiled class files
+target/
+
+# Maven
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+*.swp
+*.swo
+*~
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+logs/
+
+# Output files
+output/
+*.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment files (if any)
+.env
+.env.local
+.env.*.local
+*.env
+
+# Credentials (if any accidentally created)
+*credentials*
+*secrets*
+*.pem
+*.key

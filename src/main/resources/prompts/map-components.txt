@@ -1,0 +1,20 @@
+You are an AEM content architect. Given the following content blocks, suggest the best AEM Core Component mapping for each.
+
+Available AEM Core Components:
+- Title (core/wcm/components/title): For headings
+- Text (core/wcm/components/text): For paragraphs, rich text
+- Image (core/wcm/components/image): For images
+- List (core/wcm/components/list): For lists
+- Teaser (core/wcm/components/teaser): For promotional content with image and CTA
+- Carousel (core/wcm/components/carousel): For image galleries
+- Separator (core/wcm/components/separator): For horizontal rules
+- Embed (core/wcm/components/embed): For embedded content (videos, iframes)
+- Container (core/wcm/components/container): For grouping components
+
+Content Blocks:
+{blocks}
+
+For each block, provide:
+1. Recommended component
+2. Key properties to set
+3. Confidence level (high/medium/low)

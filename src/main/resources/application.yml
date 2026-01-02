@@ -1,0 +1,45 @@
+spring:
+  application:
+    name: aem-content-transformer
+
+  ai:
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      chat:
+        options:
+          model: ${OLLAMA_MODEL:llama3.2}
+          temperature: 0.3
+          num-predict: 1024
+
+# WordPress configuration
+wordpress:
+  source-url: ${WORDPRESS_URL:https://example.wordpress.com}
+  api-path: /wp-json/wp/v2
+
+# For integration test override (wordpress.org/news)
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+wordpress:
+  api-path: /wp-json/wp/v2
+
+# AEM output configuration
+aem:
+  output-path: ${AEM_OUTPUT_PATH:./output}
+  package-name: ${AEM_PACKAGE_NAME:content-migration}
+  site-path: ${AEM_SITE_PATH:/content/mysite}
+
+# Logging configuration
+logging:
+  level:
+    root: INFO
+    com.example.aemtransformer: DEBUG
+    org.bsc.langgraph4j: DEBUG
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+# Server configuration (optional, for REST API)
+server:
+  port: ${SERVER_PORT:8080}
