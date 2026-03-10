@@ -4,11 +4,17 @@ import com.example.aemtransformer.agent.AemGeneratorAgent;
 import com.example.aemtransformer.agent.ComponentMapperAgent;
 import com.example.aemtransformer.agent.ContentAnalyzerAgent;
 import com.example.aemtransformer.agent.WordPressScraperAgent;
+import com.example.aemtransformer.components.ExperienceFragmentComponent;
 import com.example.aemtransformer.model.AemPage;
 import com.example.aemtransformer.model.ComponentMapping;
 import com.example.aemtransformer.model.ContentAnalysis;
+import com.example.aemtransformer.model.TagMapping;
 import com.example.aemtransformer.model.WordPressContent;
 import com.example.aemtransformer.service.AemOutputService;
+import com.example.aemtransformer.service.ContentFragmentService;
+import com.example.aemtransformer.service.ExperienceFragmentService;
+import com.example.aemtransformer.service.TagMappingService;
+import com.example.aemtransformer.service.TagOutputService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -35,6 +41,10 @@ public class WorkflowNodes {
     private final ComponentMapperAgent mapperAgent;
     private final AemGeneratorAgent generatorAgent;
     private final AemOutputService outputService;
+    private final TagMappingService tagMappingService;
+    private final TagOutputService tagOutputService;
+    private final ContentFragmentService contentFragmentService;
+    private final ExperienceFragmentService experienceFragmentService;
 
     /**
      * Scrapes content from WordPress.
@@ -163,13 +173,33 @@ public class WorkflowNodes {
         try {
             ContentAnalysis analysis = state.getContentAnalysis();
             List<ComponentMapping> mappings = state.getComponentMappings();
+            WordPressContent content = state.getWordPressContent();
 
             if (analysis == null || mappings == null || mappings.isEmpty()) {
                 throw new IllegalStateException("Missing analysis or mappings for generation");
             }
 
             AemPage page = generatorAgent.generate(analysis, mappings);
+            List<TagMapping> tagMappings = tagMappingService.mapTags(state.getSourceUrl(),
+                    content != null ? content.getTags() : List.of());
+            if (!tagMappings.isEmpty() && page.getContent() != null) {
+                String[] tagPaths = tagMappings.stream().map(TagMapping::path).toArray(String[]::new);
+                page.getContent().setTags(tagPaths);
+            }
+
+            if (experienceFragmentService.isEmbedOnPage()
+                    && page.getContent() != null
+                    && page.getContent().getRoot() != null) {
+                String xfPath = experienceFragmentService.buildXfPath(
+                        content != null ? content.getSlug() : "fragment");
+                ExperienceFragmentComponent xfComponent = ExperienceFragmentComponent.builder()
+                        .componentName("experiencefragment_migrated")
+                        .fragmentPath(xfPath)
+                        .build();
+                page.getContent().getRoot().addChild("experiencefragment_migrated", xfComponent.toComponentNode());
+            }
             updates.put(AEM_PAGE_KEY, page);
+            updates.put(TAG_MAPPINGS_KEY, tagMappings);
             updates.put(CURRENT_PHASE_KEY, "generated");
             updates.put(ERRORS_KEY, new ArrayList<>());
             updates.put(RETRY_COUNT_KEY, 0);
@@ -197,6 +227,7 @@ public class WorkflowNodes {
         try {
             AemPage page = state.getAemPage();
             WordPressContent content = state.getWordPressContent();
+            List<TagMapping> tagMappings = state.getTagMappings();
 
             if (page == null) {
                 throw new IllegalStateException("No AEM page available for output");
@@ -210,6 +241,29 @@ public class WorkflowNodes {
             }
             if (outputService.isPackageZipEnabled()) {
                 outputPath = outputService.zipPackage(result.packageRoot());
+            }
+
+            if (tagMappings != null && !tagMappings.isEmpty()) {
+                tagOutputService.writeTags(result.packageRoot(), tagMappings);
+            }
+
+            String fragmentPath = null;
+            if (contentFragmentService.isEnabled()) {
+                List<String> tagPaths = tagMappings == null ? List.of()
+                        : tagMappings.stream().map(TagMapping::path).toList();
+                fragmentPath = contentFragmentService.writeContentFragment(result.packageRoot(), content, tagPaths);
+            }
+
+            if (experienceFragmentService.isEnabled()) {
+                String xfPath = experienceFragmentService.writeExperienceFragment(
+                        result.packageRoot(),
+                        content != null ? content.getSlug() : "fragment",
+                        content != null ? content.getTitleText() : "Fragment",
+                        fragmentPath
+                );
+                if (xfPath != null && outputService.isPackageZipEnabled()) {
+                    outputPath = outputService.zipPackage(result.packageRoot());
+                }
             }
 
             updates.put(OUTPUT_PATH_KEY, outputPath.toString());

@@ -3,6 +3,7 @@ package com.example.aemtransformer.workflow;
 import com.example.aemtransformer.model.AemPage;
 import com.example.aemtransformer.model.ComponentMapping;
 import com.example.aemtransformer.model.ContentAnalysis;
+import com.example.aemtransformer.model.TagMapping;
 import com.example.aemtransformer.model.WordPressContent;
 import lombok.Getter;
 import org.bsc.langgraph4j.state.AgentState;
@@ -28,6 +29,7 @@ public class TransformationState extends AgentState {
     public static final String CONTENT_ANALYSIS_KEY = "contentAnalysis";
     public static final String COMPONENT_MAPPINGS_KEY = "componentMappings";
     public static final String AEM_PAGE_KEY = "aemPage";
+    public static final String TAG_MAPPINGS_KEY = "tagMappings";
     public static final String OUTPUT_PATH_KEY = "outputPath";
     public static final String CURRENT_PHASE_KEY = "currentPhase";
     public static final String ERRORS_KEY = "errors";
@@ -41,6 +43,7 @@ public class TransformationState extends AgentState {
             Map.entry(CONTENT_ANALYSIS_KEY, Channel.of((Supplier<ContentAnalysis>) ContentAnalysis::new)),
             Map.entry(COMPONENT_MAPPINGS_KEY, Channel.of((Supplier<List<ComponentMapping>>) ArrayList::new)),
             Map.entry(AEM_PAGE_KEY, Channel.of((Supplier<AemPage>) AemPage::new)),
+            Map.entry(TAG_MAPPINGS_KEY, Channel.of((Supplier<List<TagMapping>>) ArrayList::new)),
             Map.entry(OUTPUT_PATH_KEY, Channel.of((Supplier<String>) () -> "")),
             Map.entry(CURRENT_PHASE_KEY, Channel.of((Supplier<String>) () -> "init")),
             Map.entry(ERRORS_KEY, Channel.of((Supplier<List<String>>) ArrayList::new)),
@@ -87,6 +90,15 @@ public class TransformationState extends AgentState {
 
     public AemPage getAemPage() {
         return (AemPage) value(AEM_PAGE_KEY).orElse(null);
+    }
+
+    @SuppressWarnings("unchecked")
+    public List<TagMapping> getTagMappings() {
+        Object val = value(TAG_MAPPINGS_KEY).orElse(null);
+        if (val instanceof List) {
+            return (List<TagMapping>) val;
+        }
+        return new ArrayList<>();
     }
 
     public String getOutputPath() {

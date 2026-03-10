@@ -54,6 +54,15 @@ aem:
     allowed-tags: ${AEM_HTML_ALLOWED_TAGS:}
     allowed-attrs: ${AEM_HTML_ALLOWED_ATTRS:}
     allowed-protocols: ${AEM_HTML_ALLOWED_PROTOCOLS:}
+  tags:
+    root: ${AEM_TAGS_ROOT:/content/cq:tags/mysite}
+  fragments:
+    enabled: ${AEM_FRAGMENTS_ENABLED:false}
+    content-model: ${AEM_FRAGMENT_MODEL:/conf/mysite/settings/dam/cfm/models/article}
+    dam-path: ${AEM_FRAGMENT_DAM_PATH:/content/dam/mysite/fragments}
+    xf-path: ${AEM_XF_PATH:/content/experience-fragments/mysite}
+    xf-template: ${AEM_XF_TEMPLATE:/conf/mysite/settings/wcm/templates/experience-fragment}
+    embed-xf-on-page: ${AEM_EMBED_XF_ON_PAGE:false}
 
 # Logging configuration
 logging:
