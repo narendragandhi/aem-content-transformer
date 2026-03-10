@@ -48,6 +48,7 @@
           "properties": {
             "fileReference": "/content/dam/migration/example.com/img.jpg",
             "alt": "Alt text",
+            "sourceUrl": "https://example.com/img.jpg",
             "isDecorative": false
           },
           "children": {}
@@ -63,6 +64,7 @@
               "properties": {
                 "fileReference": "/content/dam/migration/example.com/g1.jpg",
                 "alt": "G1",
+                "sourceUrl": "https://example.com/g1.jpg",
                 "isDecorative": false
               },
               "children": {}
@@ -73,6 +75,7 @@
               "properties": {
                 "fileReference": "/content/dam/migration/example.com/g2.jpg",
                 "alt": "G2",
+                "sourceUrl": "https://example.com/g2.jpg",
                 "isDecorative": false
               },
               "children": {}

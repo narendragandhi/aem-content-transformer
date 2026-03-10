@@ -23,6 +23,7 @@ import java.nio.file.Paths;
 public class AemOutputService {
 
     private final ObjectMapper objectMapper;
+    private final AssetIngestionService assetIngestionService;
 
     @Value("${aem.output-path:./output}")
     private String outputPath;
@@ -80,7 +81,9 @@ public class AemOutputService {
     public Path writePagePackage(AemPage page, String pagePath) throws IOException {
         Path packageRoot = createPackageStructure(packageName);
         Path jcrRoot = packageRoot.resolve("jcr_root");
-        return writePageStructure(page, pagePath, jcrRoot);
+        Path contentPath = writePageStructure(page, pagePath, jcrRoot);
+        assetIngestionService.ingestAssets(page, packageRoot);
+        return contentPath;
     }
 
     private Path writePageStructure(AemPage page, String pagePath, Path rootPath) throws IOException {

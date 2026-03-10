@@ -121,6 +121,7 @@ public class ComponentMapperAgent {
             }
             case IMAGE -> {
                 props.put("fileReference", mapImageReference(block.getImageUrl()));
+                addSourceUrl(props, block.getImageUrl());
                 props.put("alt", block.getImageAlt());
                 if (block.getImageCaption() != null) {
                     props.put("caption", block.getImageCaption());
@@ -141,6 +142,7 @@ public class ComponentMapperAgent {
                     for (ContentBlock child : block.getChildren()) {
                         Map<String, String> item = new HashMap<>();
                         item.put("fileReference", mapImageReference(child.getImageUrl()));
+                        addSourceUrlToItem(item, child.getImageUrl());
                         item.put("alt", child.getImageAlt());
                         items.add(item);
                     }
@@ -250,6 +252,26 @@ public class ComponentMapperAgent {
             return "asset";
         }
         return cleaned;
+    }
+
+    private void addSourceUrl(Map<String, Object> props, String imageUrl) {
+        if (imageUrl == null) {
+            return;
+        }
+        String trimmed = imageUrl.trim();
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            props.put("sourceUrl", trimmed);
+        }
+    }
+
+    private void addSourceUrlToItem(Map<String, String> props, String imageUrl) {
+        if (imageUrl == null) {
+            return;
+        }
+        String trimmed = imageUrl.trim();
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            props.put("sourceUrl", trimmed);
+        }
     }
 
     private String generateComponentName(AemComponentType type, int index) {

@@ -17,7 +17,7 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.*;
 
 @ExtendWith(SpringExtension.class)
-@ContextConfiguration(classes = {AppConfig.class, AemOutputService.class})
+@ContextConfiguration(classes = {AppConfig.class, AemOutputService.class, AssetIngestionService.class})
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class AemOutputServiceTest {
 

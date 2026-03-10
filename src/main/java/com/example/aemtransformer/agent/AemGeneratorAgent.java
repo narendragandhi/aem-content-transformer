@@ -123,6 +123,7 @@ public class AemGeneratorAgent {
                 .fileReference(getString(props, "fileReference"))
                 .alt(getString(props, "alt"))
                 .caption(getString(props, "caption"))
+                .sourceUrl(getString(props, "sourceUrl"))
                 .build();
     }
 
@@ -157,13 +158,14 @@ public class AemGeneratorAgent {
         if (items != null) {
             int index = 0;
             for (Map<String, String> item : items) {
-                ImageComponent image = ImageComponent.builder()
+                    ImageComponent image = ImageComponent.builder()
                         .componentName("carousel_image_" + index++)
                         .fileReference(item.get("fileReference"))
                         .alt(item.get("alt"))
+                        .sourceUrl(item.get("sourceUrl"))
                         .build();
-                carousel.addItem(image);
-            }
+                    carousel.addItem(image);
+                }
         }
 
         return carousel;

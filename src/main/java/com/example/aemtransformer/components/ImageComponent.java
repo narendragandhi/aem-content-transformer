@@ -23,6 +23,8 @@ public class ImageComponent implements AemComponent {
 
     private String linkURL;
 
+    private String sourceUrl;
+
     @Builder.Default
     private boolean decorative = false;
 
@@ -60,6 +62,10 @@ public class ImageComponent implements AemComponent {
 
         if (linkURL != null && !linkURL.isEmpty()) {
             node.addProperty("linkURL", linkURL);
+        }
+
+        if (sourceUrl != null && !sourceUrl.isEmpty()) {
+            node.addProperty("sourceUrl", sourceUrl);
         }
 
         node.addProperty("isDecorative", decorative);
