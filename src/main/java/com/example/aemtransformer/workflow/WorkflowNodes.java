@@ -46,7 +46,7 @@ public class WorkflowNodes {
         try {
             String sourceUrl = state.getSourceUrl();
             Long contentId = state.getContentId();
-            String contentType = state.getContentType();
+            String contentType = normalizeContentType(state.getContentType());
 
             WordPressContent content;
             if (contentId != null) {
@@ -73,6 +73,20 @@ public class WorkflowNodes {
         }
 
         return updates;
+    }
+
+    private String normalizeContentType(String contentType) {
+        if (contentType == null) {
+            return "";
+        }
+        String normalized = contentType.trim().toLowerCase();
+        if ("pages".equals(normalized)) {
+            return "page";
+        }
+        if ("posts".equals(normalized)) {
+            return "post";
+        }
+        return normalized;
     }
 
     /**

@@ -8,6 +8,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -21,6 +23,8 @@ import java.util.Map;
 @Component
 @RequiredArgsConstructor
 public class ComponentMapperAgent {
+
+    private static final String DAM_MIGRATION_ROOT = "/content/dam/migration";
 
     /**
      * Maps analyzed content blocks to AEM Core Components.
@@ -72,7 +76,7 @@ public class ComponentMapperAgent {
             case HEADING -> AemComponentType.TITLE;
             case PARAGRAPH, QUOTE, CODE, TABLE -> AemComponentType.TEXT;
             case IMAGE -> AemComponentType.IMAGE;
-            case LIST -> AemComponentType.LIST;
+            case LIST -> AemComponentType.TEXT;
             case GALLERY -> AemComponentType.CAROUSEL;
             case SEPARATOR -> AemComponentType.SEPARATOR;
             case EMBED -> AemComponentType.EMBED;
@@ -109,7 +113,7 @@ public class ComponentMapperAgent {
                 props.put("ordered", block.isOrdered());
             }
             case IMAGE -> {
-                props.put("fileReference", block.getImageUrl());
+                props.put("fileReference", mapImageReference(block.getImageUrl()));
                 props.put("alt", block.getImageAlt());
                 if (block.getImageCaption() != null) {
                     props.put("caption", block.getImageCaption());
@@ -129,7 +133,7 @@ public class ComponentMapperAgent {
                     List<Map<String, String>> items = new ArrayList<>();
                     for (ContentBlock child : block.getChildren()) {
                         Map<String, String> item = new HashMap<>();
-                        item.put("fileReference", child.getImageUrl());
+                        item.put("fileReference", mapImageReference(child.getImageUrl()));
                         item.put("alt", child.getImageAlt());
                         items.add(item);
                     }
@@ -179,6 +183,59 @@ public class ComponentMapperAgent {
                 .replace("<", "&lt;")
                 .replace(">", "&gt;")
                 .replace("\"", "&quot;");
+    }
+
+    private String mapImageReference(String imageUrl) {
+        if (imageUrl == null || imageUrl.isBlank()) {
+            return null;
+        }
+
+        String trimmed = imageUrl.trim();
+        if (trimmed.startsWith("/content/dam/")) {
+            return trimmed;
+        }
+
+        if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+            return trimmed;
+        }
+
+        try {
+            URI uri = new URI(trimmed);
+            String host = uri.getHost();
+            if (host == null || host.isBlank()) {
+                return trimmed;
+            }
+
+            String path = uri.getPath();
+            List<String> segments = new ArrayList<>();
+            segments.add("content");
+            segments.add("dam");
+            segments.add("migration");
+            segments.add(sanitizeSegment(host));
+
+            if (path != null && !path.isBlank()) {
+                for (String segment : path.split("/")) {
+                    if (!segment.isBlank()) {
+                        segments.add(sanitizeSegment(segment));
+                    }
+                }
+            } else {
+                segments.add("image");
+            }
+
+            return "/" + String.join("/", segments);
+        } catch (URISyntaxException e) {
+            return trimmed;
+        }
+    }
+
+    private String sanitizeSegment(String segment) {
+        String cleaned = segment.trim().replaceAll("[^a-zA-Z0-9._-]", "-");
+        cleaned = cleaned.replaceAll("-{2,}", "-");
+        if (cleaned.isBlank()) {
+            return "asset";
+        }
+        return cleaned;
     }
 
     private String generateComponentName(AemComponentType type, int index) {

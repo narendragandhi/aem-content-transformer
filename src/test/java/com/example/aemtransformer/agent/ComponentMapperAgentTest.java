@@ -14,7 +14,7 @@ class ComponentMapperAgentTest {
     private final ComponentMapperAgent mapperAgent = new ComponentMapperAgent();
 
     @Test
-    void mapComponents_listBlock_mapsToListComponent() {
+    void mapComponents_listBlock_mapsToTextComponent() {
         ContentBlock listBlock = ContentBlock.builder()
                 .type(ContentBlock.BlockType.LIST)
                 .listItems(List.of("A", "B"))
@@ -29,8 +29,8 @@ class ComponentMapperAgentTest {
 
         assertEquals(1, mappings.size());
         ComponentMapping mapping = mappings.get(0);
-        assertEquals(ComponentMapping.AemComponentType.LIST, mapping.getTargetComponent());
-        assertEquals(List.of("A", "B"), mapping.getProperties().get("items"));
-        assertEquals(true, mapping.getProperties().get("ordered"));
+        assertEquals(ComponentMapping.AemComponentType.TEXT, mapping.getTargetComponent());
+        assertEquals("<ol><li>A</li><li>B</li></ol>", mapping.getProperties().get("text"));
+        assertEquals(true, mapping.getProperties().get("textIsRich"));
     }
 }
