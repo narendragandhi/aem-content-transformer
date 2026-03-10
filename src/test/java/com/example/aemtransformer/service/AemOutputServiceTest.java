@@ -40,6 +40,29 @@ class AemOutputServiceTest {
         assertTrue(Files.exists(output));
     }
 
+    @Test
+    void writePagePackageWithResult_writesContentJsonInJcrRoot() throws Exception {
+        AemPage page = AemPage.create("Title", "Description");
+        AemOutputService.PackageWriteResult result = aemOutputService.writePagePackageWithResult(page, "test-page");
+
+        assertNotNull(result);
+        assertNotNull(result.packageRoot());
+        assertNotNull(result.contentPath());
+        assertTrue(Files.exists(result.contentPath()));
+        assertTrue(result.contentPath().toString().contains("jcr_root"));
+        assertEquals(".content.json", result.contentPath().getFileName().toString());
+    }
+
+    @Test
+    void zipPackage_createsZipArchive() throws Exception {
+        Path packageRoot = aemOutputService.createPackageStructure("zip-test");
+        Path zipPath = aemOutputService.zipPackage(packageRoot);
+
+        assertNotNull(zipPath);
+        assertTrue(Files.exists(zipPath));
+        assertEquals("zip-test.zip", zipPath.getFileName().toString());
+    }
+
     private static Path createTempDir() {
         try {
             return Files.createTempDirectory("aem-output-test-");

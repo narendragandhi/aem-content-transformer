@@ -34,6 +34,9 @@ public class AemOutputService {
     @Value("${aem.package-name:content-migration}")
     private String packageName;
 
+    @Value("${aem.package-zip:false}")
+    private boolean packageZipEnabled;
+
     /**
      * Writes an AEM page to a JSON file.
      *
@@ -79,15 +82,68 @@ public class AemOutputService {
      * @throws IOException if writing fails
      */
     public Path writePagePackage(AemPage page, String pagePath) throws IOException {
+        return writePagePackageWithResult(page, pagePath).contentPath();
+    }
+
+    /**
+     * Writes an AEM page into a content package and returns details.
+     *
+     * @param page AEM page to serialize
+     * @param pagePath relative page path
+     * @return package write result
+     * @throws IOException if writing fails
+     */
+    public PackageWriteResult writePagePackageWithResult(AemPage page, String pagePath) throws IOException {
         Path packageRoot = createPackageStructure(packageName);
         Path jcrRoot = packageRoot.resolve("jcr_root");
         Path contentPath = writePageStructure(page, pagePath, jcrRoot);
         assetIngestionService.ingestAssets(page, packageRoot);
-        return contentPath;
+        return new PackageWriteResult(packageRoot, contentPath);
     }
+
+    /**
+     * Creates a zip file of the generated content package for direct upload.
+     *
+     * @param packageRoot package root directory
+     * @return path to the zip file
+     * @throws IOException if zipping fails
+     */
+    public Path zipPackage(Path packageRoot) throws IOException {
+        Path zipPath = Paths.get(outputPath, packageRoot.getFileName().toString() + ".zip");
+        try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(Files.newOutputStream(zipPath))) {
+            Files.walk(packageRoot)
+                    .filter(Files::isRegularFile)
+                    .forEach(path -> {
+                        String entryName = packageRoot.relativize(path).toString().replace(File.separatorChar, '/');
+                        java.util.zip.ZipEntry entry = new java.util.zip.ZipEntry(entryName);
+                        try {
+                            zos.putNextEntry(entry);
+                            Files.copy(path, zos);
+                            zos.closeEntry();
+                        } catch (IOException e) {
+                            throw new RuntimeException("Failed to zip package file: " + path, e);
+                        }
+                    });
+        } catch (RuntimeException e) {
+            if (e.getCause() instanceof IOException ioException) {
+                throw ioException;
+            }
+            throw e;
+        }
+
+        log.info("AEM package zip written to: {}", zipPath);
+        return zipPath;
+    }
+
+    public boolean isPackageZipEnabled() {
+        return packageZipEnabled;
+    }
+
+    public record PackageWriteResult(Path packageRoot, Path contentPath) {}
 
     private Path writePageStructure(AemPage page, String pagePath, Path rootPath) throws IOException {
         String fullPath = sitePath + "/" + pagePath.replaceAll("^/", "");
+        fullPath = fullPath.replaceAll("^/+", "");
         Path pageDir = rootPath.resolve(fullPath.replace("/", File.separator));
         Files.createDirectories(pageDir);
 
