@@ -205,6 +205,9 @@ public class WorkflowNodes {
             String pageName = content != null ? content.getSlug() : "page";
             AemOutputService.PackageWriteResult result = outputService.writePagePackageWithResult(page, pageName);
             Path outputPath = result.contentPath();
+            if (result.fileVaultZip() != null) {
+                outputPath = result.fileVaultZip();
+            }
             if (outputService.isPackageZipEnabled()) {
                 outputPath = outputService.zipPackage(result.packageRoot());
             }

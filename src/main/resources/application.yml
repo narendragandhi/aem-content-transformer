@@ -31,9 +31,22 @@ aem:
   package-name: ${AEM_PACKAGE_NAME:content-migration}
   site-path: ${AEM_SITE_PATH:/content/mysite}
   package-zip: ${AEM_PACKAGE_ZIP:false}
+  filevault:
+    enabled: ${AEM_FILEVAULT_ENABLED:false}
+    command: ${AEM_FILEVAULT_COMMAND:vault}
+    validate: ${AEM_FILEVAULT_VALIDATE:false}
   template-path: ${AEM_TEMPLATE_PATH:/conf/mysite/settings/wcm/templates/content-page}
   design-path: ${AEM_DESIGN_PATH:}
   asset-download: ${AEM_ASSET_DOWNLOAD:true}
+  asset:
+    api:
+      enabled: ${AEM_ASSET_API_ENABLED:false}
+      upload-url-template: ${AEM_ASSET_API_UPLOAD_URL:}
+      auth:
+        type: ${AEM_ASSET_API_AUTH_TYPE:}
+        user: ${AEM_ASSET_API_AUTH_USER:}
+        password: ${AEM_ASSET_API_AUTH_PASSWORD:}
+        token: ${AEM_ASSET_API_AUTH_TOKEN:}
   allowed-templates: ${AEM_ALLOWED_TEMPLATES:}
   cloudservice-configs: ${AEM_CLOUDSERVICE_CONFIGS:}
   html:

@@ -9,6 +9,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 
 import java.io.IOException;
 import java.net.URLConnection;
@@ -38,6 +40,24 @@ public class AssetIngestionService {
 
     @Value("${aem.asset-download:true}")
     private boolean assetDownloadEnabled;
+
+    @Value("${aem.asset.api.enabled:false}")
+    private boolean assetApiEnabled;
+
+    @Value("${aem.asset.api.upload-url-template:}")
+    private String assetApiUploadUrlTemplate;
+
+    @Value("${aem.asset.api.auth.type:}")
+    private String assetApiAuthType;
+
+    @Value("${aem.asset.api.auth.user:}")
+    private String assetApiAuthUser;
+
+    @Value("${aem.asset.api.auth.password:}")
+    private String assetApiAuthPassword;
+
+    @Value("${aem.asset.api.auth.token:}")
+    private String assetApiAuthToken;
 
     public void ingestAssets(AemPage page, Path packageRoot) {
         if (!assetDownloadEnabled) {
@@ -115,7 +135,8 @@ public class AssetIngestionService {
             writeAssetContent(assetDir, damPath, sourceUrl, data);
 
             String mimeType = guessMimeType(damPath, data);
-            return AssetManifestEntry.success(damPath, sourceUrl, assetDir, data.length, mimeType);
+            String uploadStatus = maybeUploadToAem(client, damPath, data, mimeType);
+            return AssetManifestEntry.success(damPath, sourceUrl, assetDir, data.length, mimeType, uploadStatus);
         } catch (Exception e) {
             log.warn("Failed to ingest asset {} from {}", damPath, sourceUrl, e);
             return AssetManifestEntry.failed(damPath, sourceUrl, e.getMessage());
@@ -185,6 +206,47 @@ public class AssetIngestionService {
         return mime != null ? mime : "application/octet-stream";
     }
 
+    private String maybeUploadToAem(RestClient client, String damPath, byte[] data, String mimeType) {
+        if (!assetApiEnabled) {
+            return "skipped";
+        }
+        if (assetApiUploadUrlTemplate == null || assetApiUploadUrlTemplate.isBlank()) {
+            log.warn("Asset API enabled but upload URL template is not configured.");
+            return "skipped";
+        }
+
+        try {
+            String uploadUrl = assetApiUploadUrlTemplate.replace("{damPath}", damPath);
+            RestClient.RequestBodySpec request = client.post().uri(uploadUrl);
+            applyAuth(request);
+            request.header(HttpHeaders.CONTENT_TYPE, mimeType != null ? mimeType : MediaType.APPLICATION_OCTET_STREAM_VALUE)
+                    .body(data)
+                    .retrieve()
+                    .toBodilessEntity();
+            return "uploaded";
+        } catch (Exception e) {
+            log.warn("Asset API upload failed for {}", damPath, e);
+            return "failed";
+        }
+    }
+
+    private void applyAuth(RestClient.RequestBodySpec request) {
+        String type = assetApiAuthType != null ? assetApiAuthType.trim().toLowerCase() : "";
+        if ("basic".equals(type)) {
+            if (assetApiAuthUser != null && assetApiAuthPassword != null) {
+                String basic = java.util.Base64.getEncoder()
+                        .encodeToString((assetApiAuthUser + ":" + assetApiAuthPassword).getBytes());
+                request.header(HttpHeaders.AUTHORIZATION, "Basic " + basic);
+            }
+            return;
+        }
+        if ("bearer".equals(type)) {
+            if (assetApiAuthToken != null && !assetApiAuthToken.isBlank()) {
+                request.header(HttpHeaders.AUTHORIZATION, "Bearer " + assetApiAuthToken.trim());
+            }
+        }
+    }
+
     private record AssetRef(String fileReference, String sourceUrl) {}
 
     private record AssetManifestEntry(
@@ -194,17 +256,19 @@ public class AssetIngestionService {
             int bytes,
             String mimeType,
             String status,
+            String uploadStatus,
             String error
     ) {
-        static AssetManifestEntry success(String damPath, String sourceUrl, Path localPath, int bytes, String mimeType) {
+        static AssetManifestEntry success(String damPath, String sourceUrl, Path localPath, int bytes, String mimeType,
+                                          String uploadStatus) {
             return new AssetManifestEntry(damPath, sourceUrl,
                     localPath != null ? localPath.toString() : null,
-                    bytes, mimeType, "success", null);
+                    bytes, mimeType, "success", uploadStatus, null);
         }
 
         static AssetManifestEntry failed(String damPath, String sourceUrl, String error) {
             return new AssetManifestEntry(damPath, sourceUrl, null, 0,
-                    null, "failed", Objects.toString(error, "unknown"));
+                    null, "failed", "failed", Objects.toString(error, "unknown"));
         }
     }
 }

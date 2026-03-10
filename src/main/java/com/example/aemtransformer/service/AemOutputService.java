@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 
 /**
  * Service for writing AEM page structures to the file system.
@@ -36,6 +37,15 @@ public class AemOutputService {
 
     @Value("${aem.package-zip:false}")
     private boolean packageZipEnabled;
+
+    @Value("${aem.filevault.enabled:false}")
+    private boolean fileVaultEnabled;
+
+    @Value("${aem.filevault.command:vault}")
+    private String fileVaultCommand;
+
+    @Value("${aem.filevault.validate:false}")
+    private boolean fileVaultValidate;
 
     /**
      * Writes an AEM page to a JSON file.
@@ -98,7 +108,8 @@ public class AemOutputService {
         Path jcrRoot = packageRoot.resolve("jcr_root");
         Path contentPath = writePageStructure(page, pagePath, jcrRoot);
         assetIngestionService.ingestAssets(page, packageRoot);
-        return new PackageWriteResult(packageRoot, contentPath);
+        Path fileVaultZip = maybeBuildWithFileVault(packageRoot);
+        return new PackageWriteResult(packageRoot, contentPath, fileVaultZip);
     }
 
     /**
@@ -139,7 +150,58 @@ public class AemOutputService {
         return packageZipEnabled;
     }
 
-    public record PackageWriteResult(Path packageRoot, Path contentPath) {}
+    public boolean isFileVaultEnabled() {
+        return fileVaultEnabled;
+    }
+
+    private Path maybeBuildWithFileVault(Path packageRoot) {
+        if (!fileVaultEnabled) {
+            return null;
+        }
+
+        if (fileVaultCommand == null || fileVaultCommand.isBlank()) {
+            log.warn("FileVault enabled but command is not configured.");
+            return null;
+        }
+
+        try {
+            runFileVaultCommand(List.of("package", "-b", packageRoot.toString()));
+            if (fileVaultValidate) {
+                runFileVaultCommand(List.of("package", "-v", packageRoot.toString()));
+            }
+            Path zipPath = Paths.get(outputPath, packageRoot.getFileName().toString() + ".zip");
+            if (Files.exists(zipPath)) {
+                log.info("FileVault package built at: {}", zipPath);
+                return zipPath;
+            }
+        } catch (Exception e) {
+            log.warn("FileVault package build failed; falling back to internal packaging.", e);
+        }
+
+        return null;
+    }
+
+    private void runFileVaultCommand(List<String> args) throws IOException, InterruptedException {
+        List<String> command = new java.util.ArrayList<>();
+        command.add(fileVaultCommand);
+        command.addAll(args);
+
+        ProcessBuilder builder = new ProcessBuilder(command);
+        builder.directory(new File(outputPath));
+        builder.redirectErrorStream(true);
+        Process process = builder.start();
+        String output;
+        try (java.io.InputStream input = process.getInputStream()) {
+            output = new String(input.readAllBytes());
+        }
+        int exitCode = process.waitFor();
+        if (exitCode != 0) {
+            throw new IOException("FileVault command failed: " + String.join(" ", command) + "\n" + output);
+        }
+        log.info("FileVault output: {}", output.trim());
+    }
+
+    public record PackageWriteResult(Path packageRoot, Path contentPath, Path fileVaultZip) {}
 
     private Path writePageStructure(AemPage page, String pagePath, Path rootPath) throws IOException {
         String fullPath = sitePath + "/" + pagePath.replaceAll("^/", "");
