@@ -203,7 +203,7 @@ public class WorkflowNodes {
             }
 
             String pageName = content != null ? content.getSlug() : "page";
-            Path outputPath = outputService.writePage(page, pageName);
+            Path outputPath = outputService.writePagePackage(page, pageName);
 
             updates.put(OUTPUT_PATH_KEY, outputPath.toString());
             updates.put(CURRENT_PHASE_KEY, "completed");

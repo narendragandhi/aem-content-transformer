@@ -30,6 +30,8 @@ aem:
   output-path: ${AEM_OUTPUT_PATH:./output}
   package-name: ${AEM_PACKAGE_NAME:content-migration}
   site-path: ${AEM_SITE_PATH:/content/mysite}
+  template-path: ${AEM_TEMPLATE_PATH:/conf/mysite/settings/wcm/templates/content-page}
+  design-path: ${AEM_DESIGN_PATH:}
 
 # Logging configuration
 logging:

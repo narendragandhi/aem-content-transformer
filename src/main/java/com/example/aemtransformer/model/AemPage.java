@@ -53,6 +53,12 @@ public class AemPage implements Serializable {
         @JsonProperty("cq:tags")
         private String[] tags;
 
+        @JsonProperty("cq:template")
+        private String template;
+
+        @JsonProperty("cq:designPath")
+        private String designPath;
+
         private ComponentNode root;
     }
 

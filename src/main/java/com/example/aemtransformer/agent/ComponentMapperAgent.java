@@ -6,6 +6,9 @@ import com.example.aemtransformer.model.ContentAnalysis;
 import com.example.aemtransformer.model.ContentBlock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.safety.Safelist;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -25,6 +28,10 @@ import java.util.Map;
 public class ComponentMapperAgent {
 
     private static final String DAM_MIGRATION_ROOT = "/content/dam/migration";
+    private static final Safelist AEM_RTE_SAFELIST = Safelist.relaxed()
+            .addAttributes("a", "target", "rel");
+    private static final Document.OutputSettings AEM_OUTPUT_SETTINGS = new Document.OutputSettings()
+            .prettyPrint(false);
 
     /**
      * Maps analyzed content blocks to AEM Core Components.
@@ -153,12 +160,12 @@ public class ComponentMapperAgent {
 
     private String formatTextContent(ContentBlock block) {
         return switch (block.getType()) {
-            case PARAGRAPH -> "<p>" + block.getContent() + "</p>";
-            case QUOTE -> "<blockquote>" + block.getContent() + "</blockquote>";
+            case PARAGRAPH -> "<p>" + sanitizeHtmlFragment(block.getContent()) + "</p>";
+            case QUOTE -> "<blockquote>" + sanitizeHtmlFragment(block.getContent()) + "</blockquote>";
             case CODE -> "<pre><code>" + escapeHtml(block.getContent()) + "</code></pre>";
-            case TABLE -> block.getRawHtml();
+            case TABLE -> sanitizeHtmlFragment(block.getRawHtml());
             case LIST -> formatListContent(block);
-            default -> block.getContent() != null ? block.getContent() : block.getRawHtml();
+            default -> sanitizeHtmlFragment(block.getContent() != null ? block.getContent() : block.getRawHtml());
         };
     }
 
@@ -171,10 +178,17 @@ public class ComponentMapperAgent {
         String tag = block.isOrdered() ? "ol" : "ul";
         sb.append("<").append(tag).append(">");
         for (String item : block.getListItems()) {
-            sb.append("<li>").append(item).append("</li>");
+            sb.append("<li>").append(sanitizeHtmlFragment(item)).append("</li>");
         }
         sb.append("</").append(tag).append(">");
         return sb.toString();
+    }
+
+    private String sanitizeHtmlFragment(String html) {
+        if (html == null || html.isBlank()) {
+            return "";
+        }
+        return Jsoup.clean(html, "", AEM_RTE_SAFELIST, AEM_OUTPUT_SETTINGS);
     }
 
     private String escapeHtml(String text) {

@@ -9,6 +9,7 @@ import com.example.aemtransformer.model.ComponentMapping.AemComponentType;
 import com.example.aemtransformer.model.ContentAnalysis;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -21,6 +22,12 @@ import java.util.Map;
 @Component
 @RequiredArgsConstructor
 public class AemGeneratorAgent {
+
+    @Value("${aem.template-path:/conf/mysite/settings/wcm/templates/content-page}")
+    private String templatePath = "/conf/mysite/settings/wcm/templates/content-page";
+
+    @Value("${aem.design-path:}")
+    private String designPath = "";
 
     /**
      * Generates an AEM page from content analysis and component mappings.
@@ -50,6 +57,8 @@ public class AemGeneratorAgent {
         PageContent pageContent = PageContent.builder()
                 .title(analysis.getPageTitle())
                 .description(analysis.getPageDescription())
+                .template(resolveOptional(templatePath))
+                .designPath(resolveOptional(designPath))
                 .root(rootNode)
                 .build();
 
@@ -59,6 +68,14 @@ public class AemGeneratorAgent {
 
         log.info("AEM page generated successfully");
         return page;
+    }
+
+    private String resolveOptional(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private AemComponent createComponent(ComponentMapping mapping) {

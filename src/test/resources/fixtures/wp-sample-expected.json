@@ -1,0 +1,94 @@
+{
+  "jcr:primaryType": "cq:Page",
+  "jcr:content": {
+    "jcr:primaryType": "cq:PageContent",
+    "sling:resourceType": "core/wcm/components/page/v3/page",
+    "jcr:title": "Sample Title",
+    "jcr:description": "Sample description",
+    "cq:tags": null,
+    "cq:template": "/conf/mysite/settings/wcm/templates/content-page",
+    "cq:designPath": null,
+    "root": {
+      "jcr:primaryType": "nt:unstructured",
+      "sling:resourceType": "core/wcm/components/container/v1/container",
+      "properties": {
+        "layout": "responsiveGrid"
+      },
+      "children": {
+        "title_0": {
+          "jcr:primaryType": "nt:unstructured",
+          "sling:resourceType": "core/wcm/components/title/v3/title",
+          "properties": {
+            "jcr:title": "Sample Heading",
+            "type": "h1"
+          },
+          "children": {}
+        },
+        "text_1": {
+          "jcr:primaryType": "nt:unstructured",
+          "sling:resourceType": "core/wcm/components/text/v2/text",
+          "properties": {
+            "text": "<p>Intro <strong>bold</strong> text.</p>",
+            "textIsRich": true
+          },
+          "children": {}
+        },
+        "text_2": {
+          "jcr:primaryType": "nt:unstructured",
+          "sling:resourceType": "core/wcm/components/text/v2/text",
+          "properties": {
+            "text": "<ul><li>First</li><li>Second</li></ul>",
+            "textIsRich": true
+          },
+          "children": {}
+        },
+        "image_3": {
+          "jcr:primaryType": "nt:unstructured",
+          "sling:resourceType": "core/wcm/components/image/v3/image",
+          "properties": {
+            "fileReference": "/content/dam/migration/example.com/img.jpg",
+            "alt": "Alt text",
+            "isDecorative": false
+          },
+          "children": {}
+        },
+        "carousel_4": {
+          "jcr:primaryType": "nt:unstructured",
+          "sling:resourceType": "core/wcm/components/carousel/v1/carousel",
+          "properties": {},
+          "children": {
+            "carousel_image_0": {
+              "jcr:primaryType": "nt:unstructured",
+              "sling:resourceType": "core/wcm/components/image/v3/image",
+              "properties": {
+                "fileReference": "/content/dam/migration/example.com/g1.jpg",
+                "alt": "G1",
+                "isDecorative": false
+              },
+              "children": {}
+            },
+            "carousel_image_1": {
+              "jcr:primaryType": "nt:unstructured",
+              "sling:resourceType": "core/wcm/components/image/v3/image",
+              "properties": {
+                "fileReference": "/content/dam/migration/example.com/g2.jpg",
+                "alt": "G2",
+                "isDecorative": false
+              },
+              "children": {}
+            }
+          }
+        },
+        "embed_5": {
+          "jcr:primaryType": "nt:unstructured",
+          "sling:resourceType": "core/wcm/components/embed/v2/embed",
+          "properties": {
+            "url": "https://example.com/embed",
+            "type": "iframe"
+          },
+          "children": {}
+        }
+      }
+    }
+  }
+}

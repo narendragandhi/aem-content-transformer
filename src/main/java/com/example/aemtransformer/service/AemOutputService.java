@@ -30,6 +30,9 @@ public class AemOutputService {
     @Value("${aem.site-path:/content/mysite}")
     private String sitePath;
 
+    @Value("${aem.package-name:content-migration}")
+    private String packageName;
+
     /**
      * Writes an AEM page to a JSON file.
      *
@@ -63,8 +66,26 @@ public class AemOutputService {
      * @throws IOException if writing fails
      */
     public Path writePageStructure(AemPage page, String pagePath) throws IOException {
+        return writePageStructure(page, pagePath, Paths.get(outputPath));
+    }
+
+    /**
+     * Writes an AEM page structure into a content package format.
+     *
+     * @param page AEM page to serialize
+     * @param pagePath relative page path
+     * @return path to the written .content.json
+     * @throws IOException if writing fails
+     */
+    public Path writePagePackage(AemPage page, String pagePath) throws IOException {
+        Path packageRoot = createPackageStructure(packageName);
+        Path jcrRoot = packageRoot.resolve("jcr_root");
+        return writePageStructure(page, pagePath, jcrRoot);
+    }
+
+    private Path writePageStructure(AemPage page, String pagePath, Path rootPath) throws IOException {
         String fullPath = sitePath + "/" + pagePath.replaceAll("^/", "");
-        Path pageDir = Paths.get(outputPath, fullPath.replace("/", File.separator));
+        Path pageDir = rootPath.resolve(fullPath.replace("/", File.separator));
         Files.createDirectories(pageDir);
 
         Path contentFile = pageDir.resolve(".content.json");
