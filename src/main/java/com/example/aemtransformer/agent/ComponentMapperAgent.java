@@ -4,11 +4,9 @@ import com.example.aemtransformer.model.ComponentMapping;
 import com.example.aemtransformer.model.ComponentMapping.AemComponentType;
 import com.example.aemtransformer.model.ContentAnalysis;
 import com.example.aemtransformer.model.ContentBlock;
+import com.example.aemtransformer.service.HtmlSanitizerService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
-import org.jsoup.safety.Safelist;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -28,10 +26,8 @@ import java.util.Map;
 public class ComponentMapperAgent {
 
     private static final String DAM_MIGRATION_ROOT = "/content/dam/migration";
-    private static final Safelist AEM_RTE_SAFELIST = Safelist.relaxed()
-            .addAttributes("a", "target", "rel");
-    private static final Document.OutputSettings AEM_OUTPUT_SETTINGS = new Document.OutputSettings()
-            .prettyPrint(false);
+
+    private final HtmlSanitizerService htmlSanitizerService;
 
     /**
      * Maps analyzed content blocks to AEM Core Components.
@@ -187,10 +183,7 @@ public class ComponentMapperAgent {
     }
 
     private String sanitizeHtmlFragment(String html) {
-        if (html == null || html.isBlank()) {
-            return "";
-        }
-        return Jsoup.clean(html, "", AEM_RTE_SAFELIST, AEM_OUTPUT_SETTINGS);
+        return htmlSanitizerService.sanitize(html);
     }
 
     private String escapeHtml(String text) {

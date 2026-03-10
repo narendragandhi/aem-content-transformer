@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 class GoldenFixtureTest {
 
     private final HtmlParserService htmlParserService = new HtmlParserService();
-    private final ComponentMapperAgent componentMapperAgent = new ComponentMapperAgent();
+    private final ComponentMapperAgent componentMapperAgent = new ComponentMapperAgent(new com.example.aemtransformer.service.HtmlSanitizerService());
     private final AemGeneratorAgent aemGeneratorAgent = new AemGeneratorAgent();
     private final ObjectMapper objectMapper = new AppConfig().objectMapper();
 

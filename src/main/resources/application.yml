@@ -35,6 +35,11 @@ aem:
   asset-download: ${AEM_ASSET_DOWNLOAD:true}
   allowed-templates: ${AEM_ALLOWED_TEMPLATES:}
   cloudservice-configs: ${AEM_CLOUDSERVICE_CONFIGS:}
+  html:
+    policy: ${AEM_HTML_POLICY:relaxed}
+    allowed-tags: ${AEM_HTML_ALLOWED_TAGS:}
+    allowed-attrs: ${AEM_HTML_ALLOWED_ATTRS:}
+    allowed-protocols: ${AEM_HTML_ALLOWED_PROTOCOLS:}
 
 # Logging configuration
 logging:

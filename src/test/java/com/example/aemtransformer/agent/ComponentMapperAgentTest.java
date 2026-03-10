@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ComponentMapperAgentTest {
 
-    private final ComponentMapperAgent mapperAgent = new ComponentMapperAgent();
+    private final ComponentMapperAgent mapperAgent = new ComponentMapperAgent(new com.example.aemtransformer.service.HtmlSanitizerService());
 
     @Test
     void mapComponents_listBlock_mapsToTextComponent() {
