@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.io.Serializable;
 import java.util.Map;
 
 /**
@@ -14,7 +15,9 @@ import java.util.Map;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ComponentMapping {
+public class ComponentMapping implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     public enum AemComponentType {
         TITLE("core/wcm/components/title/v3/title"),

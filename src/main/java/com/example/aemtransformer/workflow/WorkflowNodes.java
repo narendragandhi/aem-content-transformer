@@ -59,6 +59,8 @@ public class WorkflowNodes {
 
             updates.put(WORDPRESS_CONTENT_KEY, content);
             updates.put(CURRENT_PHASE_KEY, "scraped");
+            updates.put(ERRORS_KEY, new ArrayList<>());
+            updates.put(RETRY_COUNT_KEY, 0);
             log.info("Successfully scraped content: {}", content.getTitleText());
 
         } catch (Exception e) {
@@ -66,6 +68,7 @@ public class WorkflowNodes {
             List<String> errors = new ArrayList<>(state.getErrors());
             errors.add("Scrape error: " + e.getMessage());
             updates.put(ERRORS_KEY, errors);
+            updates.put(RETRY_COUNT_KEY, state.getRetryCount() + 1);
             updates.put(CURRENT_PHASE_KEY, "error");
         }
 
@@ -88,6 +91,8 @@ public class WorkflowNodes {
             ContentAnalysis analysis = analyzerAgent.analyze(content);
             updates.put(CONTENT_ANALYSIS_KEY, analysis);
             updates.put(CURRENT_PHASE_KEY, "analyzed");
+            updates.put(ERRORS_KEY, new ArrayList<>());
+            updates.put(RETRY_COUNT_KEY, 0);
             log.info("Successfully analyzed content: {} blocks found", analysis.getBlocks().size());
 
         } catch (Exception e) {
@@ -95,6 +100,7 @@ public class WorkflowNodes {
             List<String> errors = new ArrayList<>(state.getErrors());
             errors.add("Analysis error: " + e.getMessage());
             updates.put(ERRORS_KEY, errors);
+            updates.put(RETRY_COUNT_KEY, state.getRetryCount() + 1);
             updates.put(CURRENT_PHASE_KEY, "error");
         }
 
@@ -117,6 +123,8 @@ public class WorkflowNodes {
             List<ComponentMapping> mappings = mapperAgent.mapComponents(analysis);
             updates.put(COMPONENT_MAPPINGS_KEY, mappings);
             updates.put(CURRENT_PHASE_KEY, "transformed");
+            updates.put(ERRORS_KEY, new ArrayList<>());
+            updates.put(RETRY_COUNT_KEY, 0);
             log.info("Successfully mapped {} components", mappings.size());
 
         } catch (Exception e) {
@@ -124,6 +132,7 @@ public class WorkflowNodes {
             List<String> errors = new ArrayList<>(state.getErrors());
             errors.add("Transform error: " + e.getMessage());
             updates.put(ERRORS_KEY, errors);
+            updates.put(RETRY_COUNT_KEY, state.getRetryCount() + 1);
             updates.put(CURRENT_PHASE_KEY, "error");
         }
 
@@ -148,6 +157,8 @@ public class WorkflowNodes {
             AemPage page = generatorAgent.generate(analysis, mappings);
             updates.put(AEM_PAGE_KEY, page);
             updates.put(CURRENT_PHASE_KEY, "generated");
+            updates.put(ERRORS_KEY, new ArrayList<>());
+            updates.put(RETRY_COUNT_KEY, 0);
             log.info("Successfully generated AEM page");
 
         } catch (Exception e) {
@@ -155,6 +166,7 @@ public class WorkflowNodes {
             List<String> errors = new ArrayList<>(state.getErrors());
             errors.add("Generate error: " + e.getMessage());
             updates.put(ERRORS_KEY, errors);
+            updates.put(RETRY_COUNT_KEY, state.getRetryCount() + 1);
             updates.put(CURRENT_PHASE_KEY, "error");
         }
 
@@ -181,6 +193,8 @@ public class WorkflowNodes {
 
             updates.put(OUTPUT_PATH_KEY, outputPath.toString());
             updates.put(CURRENT_PHASE_KEY, "completed");
+            updates.put(ERRORS_KEY, new ArrayList<>());
+            updates.put(RETRY_COUNT_KEY, 0);
             log.info("Successfully wrote AEM page to: {}", outputPath);
 
         } catch (Exception e) {
@@ -188,6 +202,7 @@ public class WorkflowNodes {
             List<String> errors = new ArrayList<>(state.getErrors());
             errors.add("Output error: " + e.getMessage());
             updates.put(ERRORS_KEY, errors);
+            updates.put(RETRY_COUNT_KEY, state.getRetryCount() + 1);
             updates.put(CURRENT_PHASE_KEY, "error");
         }
 

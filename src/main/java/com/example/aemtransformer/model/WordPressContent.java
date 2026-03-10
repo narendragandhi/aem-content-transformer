@@ -7,6 +7,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -19,7 +20,9 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class WordPressContent {
+public class WordPressContent implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     private Long id;
 
@@ -56,7 +59,8 @@ public class WordPressContent {
     @NoArgsConstructor
     @AllArgsConstructor
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class Title {
+    public static class Title implements Serializable {
+        private static final long serialVersionUID = 1L;
         private String rendered;
     }
 
@@ -64,7 +68,8 @@ public class WordPressContent {
     @NoArgsConstructor
     @AllArgsConstructor
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class Content {
+    public static class Content implements Serializable {
+        private static final long serialVersionUID = 1L;
         private String rendered;
         @JsonProperty("protected")
         private boolean isProtected;
@@ -74,7 +79,8 @@ public class WordPressContent {
     @NoArgsConstructor
     @AllArgsConstructor
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class Excerpt {
+    public static class Excerpt implements Serializable {
+        private static final long serialVersionUID = 1L;
         private String rendered;
         @JsonProperty("protected")
         private boolean isProtected;

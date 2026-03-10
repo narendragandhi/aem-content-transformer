@@ -32,6 +32,11 @@ public class AemOutputService {
 
     /**
      * Writes an AEM page to a JSON file.
+     *
+     * @param page AEM page to serialize
+     * @param pageName output file base name
+     * @return path to the written file
+     * @throws IOException if writing fails
      */
     public Path writePage(AemPage page, String pageName) throws IOException {
         Path outputDir = Paths.get(outputPath);
@@ -51,6 +56,11 @@ public class AemOutputService {
 
     /**
      * Writes an AEM page structure to a directory structure matching AEM's JCR.
+     *
+     * @param page AEM page to serialize
+     * @param pagePath relative page path
+     * @return path to the written .content.json
+     * @throws IOException if writing fails
      */
     public Path writePageStructure(AemPage page, String pagePath) throws IOException {
         String fullPath = sitePath + "/" + pagePath.replaceAll("^/", "");
@@ -70,6 +80,10 @@ public class AemOutputService {
 
     /**
      * Creates a content package structure for import into AEM.
+     *
+     * @param packageName package name
+     * @return path to the created package root
+     * @throws IOException if writing fails
      */
     public Path createPackageStructure(String packageName) throws IOException {
         Path packageRoot = Paths.get(outputPath, packageName);
@@ -114,9 +128,10 @@ public class AemOutputService {
     }
 
     private String sanitizeFileName(String name) {
-        return name.toLowerCase()
+        String sanitized = name == null ? "" : name.toLowerCase()
                 .replaceAll("[^a-z0-9-]", "-")
                 .replaceAll("-+", "-")
                 .replaceAll("^-|-$", "");
+        return sanitized.isEmpty() ? "page" : sanitized;
     }
 }

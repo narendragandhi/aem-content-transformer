@@ -57,6 +57,10 @@ java -jar target/aem-content-transformer-1.0.0-SNAPSHOT.jar \
 # Transform a single page
 java -jar target/aem-content-transformer-1.0.0-SNAPSHOT.jar \
     transform https://example.wordpress.com 45 page
+
+# Transform by full URL
+java -jar target/aem-content-transformer-1.0.0-SNAPSHOT.jar \
+    transform-url https://example.wordpress.com/news/my-post/
 ```
 
 ## Configuration
@@ -70,6 +74,9 @@ The application can be configured via environment variables:
 | `AEM_OUTPUT_PATH` | `./output` | Output directory for generated JSON |
 | `AEM_SITE_PATH` | `/content/mysite` | AEM site path prefix |
 | `WORDPRESS_URL` | - | Default WordPress site URL |
+| `TRANSFORM_ALLOWED_HOSTS` | - | Comma-separated allowlist for the REST endpoint |
+| `MIGRATION_BATCH_CONCURRENCY` | `4` | Parallelism for batch processing |
+| `MIGRATION_MANIFEST_FILENAME` | `manifest.jsonl` | Manifest file name under `AEM_OUTPUT_PATH` |
 
 ## Workflow Stages
 

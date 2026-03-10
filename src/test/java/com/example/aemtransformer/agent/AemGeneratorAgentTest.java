@@ -74,8 +74,10 @@ class AemGeneratorAgentTest {
         AemPage page = agent.generate(analysis, mappings);
 
         assertNotNull(page);
-        var children = page.getContent().getRoot().getChildren();
-        assertFalse(children.isEmpty());
+        var embedChild = page.getContent().getRoot().getChildren().get("embed_0");
+        assertNotNull(embedChild);
+        assertEquals("core/wcm/components/embed/v2/embed", embedChild.getResourceType());
+        assertEquals("https://youtube.com/embed/abc123", embedChild.getProperties().get("url"));
     }
 
     @ParameterizedTest
@@ -136,13 +138,17 @@ class AemGeneratorAgentTest {
         AemPage page = agent.generate(analysis, mappings);
 
         var embedChild = page.getContent().getRoot().getChildren().get("embed_0");
+        String url = (String) embedChild.getProperties().get("url");
         String text = (String) embedChild.getProperties().get("text");
 
-        // The text should contain escaped versions of dangerous chars
-        assertTrue(text.contains("&lt;script&gt;") || text.contains("unavailable"),
-                "XSS should be escaped or URL rejected");
-        assertTrue(text.contains("&quot;") || text.contains("unavailable"),
-                "Quotes should be escaped or URL rejected");
+        if (url != null) {
+            assertFalse(url.contains("<script>"), "Embed URL should be sanitized");
+            assertTrue(url.contains("&lt;script&gt;") || url.contains("&quot;"),
+                    "Embed URL should escape dangerous characters");
+        } else {
+            assertNotNull(text, "Fallback text should be present if URL rejected");
+            assertTrue(text.contains("unavailable"));
+        }
     }
 
     @Test
@@ -169,6 +175,34 @@ class AemGeneratorAgentTest {
         var embedChild = page.getContent().getRoot().getChildren().get("embed_0");
         String text = (String) embedChild.getProperties().get("text");
         assertTrue(text.contains("unavailable"));
+    }
+
+    @Test
+    void generate_listComponent_setsItems() {
+        ContentAnalysis analysis = ContentAnalysis.builder()
+                .pageTitle("Test")
+                .pageDescription("")
+                .blocks(new ArrayList<>())
+                .build();
+
+        Map<String, Object> props = new HashMap<>();
+        props.put("items", List.of("A", "B"));
+        props.put("ordered", true);
+
+        List<ComponentMapping> mappings = List.of(
+                ComponentMapping.builder()
+                        .targetComponent(AemComponentType.LIST)
+                        .componentName("list_0")
+                        .properties(props)
+                        .build()
+        );
+
+        AemPage page = agent.generate(analysis, mappings);
+
+        var listChild = page.getContent().getRoot().getChildren().get("list_0");
+        assertNotNull(listChild);
+        assertEquals("core/wcm/components/list/v4/list", listChild.getResourceType());
+        assertTrue(((String) listChild.getProperties().get("text")).contains("<ol>"));
     }
 
     @Test

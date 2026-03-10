@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.io.Serializable;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -16,7 +17,9 @@ import java.util.Map;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class AemPage {
+public class AemPage implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     @JsonProperty("jcr:primaryType")
     @Builder.Default
@@ -29,7 +32,9 @@ public class AemPage {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class PageContent {
+    public static class PageContent implements Serializable {
+
+        private static final long serialVersionUID = 1L;
 
         @JsonProperty("jcr:primaryType")
         @Builder.Default
@@ -55,7 +60,9 @@ public class AemPage {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class ComponentNode {
+    public static class ComponentNode implements Serializable {
+
+        private static final long serialVersionUID = 1L;
 
         @JsonProperty("jcr:primaryType")
         @Builder.Default

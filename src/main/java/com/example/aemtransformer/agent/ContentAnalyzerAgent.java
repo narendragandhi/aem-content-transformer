@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -22,10 +23,13 @@ import java.util.List;
 public class ContentAnalyzerAgent {
 
     private final HtmlParserService htmlParserService;
-    private final ChatModel chatModel;
+    private final ObjectProvider<ChatModel> chatModelProvider;
 
     /**
      * Analyzes WordPress content and extracts structured blocks.
+     *
+     * @param content WordPress content item
+     * @return analysis with extracted blocks and metadata
      */
     public ContentAnalysis analyze(WordPressContent content) {
         log.info("Analyzing content: {}", content.getTitleText());
@@ -56,6 +60,12 @@ public class ContentAnalyzerAgent {
      */
     private String generateContentSummary(WordPressContent content) {
         try {
+            ChatModel chatModel = chatModelProvider.getIfAvailable();
+            if (chatModel == null) {
+                log.debug("No ChatModel configured, falling back to excerpt summary");
+                return content.getExcerptText();
+            }
+
             ChatClient chatClient = ChatClient.create(chatModel);
 
             String prompt = """

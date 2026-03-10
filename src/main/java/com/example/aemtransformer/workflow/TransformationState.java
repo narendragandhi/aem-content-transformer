@@ -35,12 +35,12 @@ public class TransformationState extends AgentState {
 
     public static final Map<String, Channel<?>> SCHEMA = Map.ofEntries(
             Map.entry(SOURCE_URL_KEY, Channel.of((Supplier<String>) () -> "")),
-            Map.entry(CONTENT_ID_KEY, Channel.of((Supplier<Long>) () -> null)),
+            Map.entry(CONTENT_ID_KEY, Channel.of((Supplier<Long>) () -> -1L)),
             Map.entry(CONTENT_TYPE_KEY, Channel.of((Supplier<String>) () -> "post")),
-            Map.entry(WORDPRESS_CONTENT_KEY, Channel.of((Supplier<WordPressContent>) () -> null)),
-            Map.entry(CONTENT_ANALYSIS_KEY, Channel.of((Supplier<ContentAnalysis>) () -> null)),
+            Map.entry(WORDPRESS_CONTENT_KEY, Channel.of((Supplier<WordPressContent>) WordPressContent::new)),
+            Map.entry(CONTENT_ANALYSIS_KEY, Channel.of((Supplier<ContentAnalysis>) ContentAnalysis::new)),
             Map.entry(COMPONENT_MAPPINGS_KEY, Channel.of((Supplier<List<ComponentMapping>>) ArrayList::new)),
-            Map.entry(AEM_PAGE_KEY, Channel.of((Supplier<AemPage>) () -> null)),
+            Map.entry(AEM_PAGE_KEY, Channel.of((Supplier<AemPage>) AemPage::new)),
             Map.entry(OUTPUT_PATH_KEY, Channel.of((Supplier<String>) () -> "")),
             Map.entry(CURRENT_PHASE_KEY, Channel.of((Supplier<String>) () -> "init")),
             Map.entry(ERRORS_KEY, Channel.of((Supplier<List<String>>) ArrayList::new)),
@@ -58,7 +58,8 @@ public class TransformationState extends AgentState {
     public Long getContentId() {
         Object val = value(CONTENT_ID_KEY).orElse(null);
         if (val instanceof Number) {
-            return ((Number) val).longValue();
+            long id = ((Number) val).longValue();
+            return id > 0 ? id : null;
         }
         return null;
     }

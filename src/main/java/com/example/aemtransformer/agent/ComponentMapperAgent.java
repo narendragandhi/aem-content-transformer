@@ -4,11 +4,8 @@ import com.example.aemtransformer.model.ComponentMapping;
 import com.example.aemtransformer.model.ComponentMapping.AemComponentType;
 import com.example.aemtransformer.model.ContentAnalysis;
 import com.example.aemtransformer.model.ContentBlock;
-import com.example.aemtransformer.model.ContentBlock.BlockType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -18,17 +15,18 @@ import java.util.Map;
 
 /**
  * Agent responsible for mapping content blocks to AEM Core Components.
- * Uses rule-based mapping with LLM assistance for complex cases.
+ * Uses rule-based mapping for consistent conversions.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class ComponentMapperAgent {
 
-    private final ChatModel chatModel;
-
     /**
      * Maps analyzed content blocks to AEM Core Components.
+     *
+     * @param analysis content analysis results
+     * @return list of component mappings
      */
     public List<ComponentMapping> mapComponents(ContentAnalysis analysis) {
         log.info("Mapping {} content blocks to AEM components", analysis.getBlocks().size());
@@ -74,7 +72,7 @@ public class ComponentMapperAgent {
             case HEADING -> AemComponentType.TITLE;
             case PARAGRAPH, QUOTE, CODE, TABLE -> AemComponentType.TEXT;
             case IMAGE -> AemComponentType.IMAGE;
-            case LIST -> AemComponentType.TEXT;
+            case LIST -> AemComponentType.LIST;
             case GALLERY -> AemComponentType.CAROUSEL;
             case SEPARATOR -> AemComponentType.SEPARATOR;
             case EMBED -> AemComponentType.EMBED;
@@ -105,6 +103,10 @@ public class ComponentMapperAgent {
             case TEXT -> {
                 props.put("text", formatTextContent(block));
                 props.put("textIsRich", true);
+            }
+            case LIST -> {
+                props.put("items", block.getListItems());
+                props.put("ordered", block.isOrdered());
             }
             case IMAGE -> {
                 props.put("fileReference", block.getImageUrl());
@@ -184,6 +186,7 @@ public class ComponentMapperAgent {
             case TITLE -> "title";
             case TEXT -> "text";
             case IMAGE -> "image";
+            case LIST -> "list";
             case CAROUSEL -> "carousel";
             case SEPARATOR -> "separator";
             case EMBED -> "embed";

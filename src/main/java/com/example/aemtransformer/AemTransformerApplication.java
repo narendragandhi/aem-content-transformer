@@ -1,6 +1,7 @@
 package com.example.aemtransformer;
 
-import com.example.aemtransformer.workflow.TransformationWorkflow;
+import com.example.aemtransformer.service.BatchMigrationService;
+import com.example.aemtransformer.service.TransformationService;
 import com.example.aemtransformer.workflow.TransformationWorkflow.TransformationResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,7 +19,8 @@ import org.springframework.context.annotation.Bean;
 @RequiredArgsConstructor
 public class AemTransformerApplication {
 
-    private final TransformationWorkflow workflow;
+    private final TransformationService transformationService;
+    private final BatchMigrationService batchMigrationService;
 
     public static void main(String[] args) {
         SpringApplication.run(AemTransformerApplication.class, args);
@@ -36,6 +38,7 @@ public class AemTransformerApplication {
 
             switch (command) {
                 case "transform" -> handleTransform(args);
+                case "transform-url" -> handleTransformUrl(args);
                 case "batch" -> handleBatch(args);
                 case "help" -> printUsage();
                 default -> {
@@ -58,7 +61,7 @@ public class AemTransformerApplication {
 
         log.info("Starting transformation of {} {} from {}", contentType, contentId, sourceUrl);
 
-        TransformationResult result = workflow.execute(sourceUrl, contentId, contentType);
+        TransformationResult result = transformationService.transformById(sourceUrl, contentId, contentType);
 
         if (result.success()) {
             log.info("Transformation completed successfully!");
@@ -82,57 +85,14 @@ public class AemTransformerApplication {
 
         log.info("Starting batch processing of {} from {}", contentType, sourceUrl);
 
-        int page = 1;
-        int totalProcessed = 0;
-        int successCount = 0;
-        int failureCount = 0;
-
-        while (page <= maxPages) {
-            log.info("Processing page {} of {}...", page, contentType);
-
-            try {
-                var contents = "posts".equals(contentType) || "post".equals(contentType)
-                        ? workflow.fetchAllPosts(sourceUrl, page, perPage)
-                        : workflow.fetchAllPages(sourceUrl, page, perPage);
-
-                if (contents.isEmpty()) {
-                    log.info("No more {} found at page {}", contentType, page);
-                    break;
-                }
-
-                for (var content : contents) {
-                    totalProcessed++;
-                    try {
-                        log.info("[{}/batch] Processing: {}", totalProcessed, content.getTitleText());
-                        TransformationResult result = workflow.execute(sourceUrl, content.getId(), contentType);
-
-                        if (result.success()) {
-                            successCount++;
-                            log.info("[{}/batch] Success: {}", totalProcessed, result.outputPath());
-                        } else {
-                            failureCount++;
-                            log.warn("[{}/batch] Failed: {}", totalProcessed, result.errorMessage());
-                        }
-                    } catch (Exception e) {
-                        failureCount++;
-                        log.error("[{}/batch] Error processing {}: {}",
-                                totalProcessed, content.getTitleText(), e.getMessage());
-                    }
-                }
-
-                page++;
-
-            } catch (Exception e) {
-                log.error("Error fetching {} page {}: {}", contentType, page, e.getMessage());
-                break;
-            }
-        }
+        BatchMigrationService.BatchResult result =
+                batchMigrationService.runBatch(sourceUrl, contentType, perPage, maxPages);
 
         log.info("Batch processing complete!");
-        log.info("Total processed: {}, Success: {}, Failed: {}",
-                totalProcessed, successCount, failureCount);
+        log.info("Total processed: {}, Success: {}, Failed: {}, Skipped: {}",
+                result.totalProcessed(), result.successCount(), result.failureCount(), result.skippedCount());
 
-        if (failureCount > 0) {
+        if (result.failureCount() > 0) {
             System.exit(1);
         }
     }
@@ -144,6 +104,7 @@ public class AemTransformerApplication {
 
             Usage:
               transform <wordpress-url> <content-id> <type>   Transform a single post or page
+              transform-url <wordpress-article-url>          Transform a single post or page by URL
               batch <wordpress-url> <type>                    Transform all posts or pages
               help                                            Show this help message
 
@@ -151,6 +112,7 @@ public class AemTransformerApplication {
               wordpress-url   Base URL of the WordPress site (e.g., https://example.com)
               content-id      ID of the post or page to transform
               type            Content type: 'post' or 'page'
+              wordpress-article-url  Full URL of a WordPress post or page
 
             Environment Variables:
               OLLAMA_BASE_URL     Ollama server URL (default: http://localhost:11434)
@@ -161,7 +123,27 @@ public class AemTransformerApplication {
             Examples:
               java -jar aem-transformer.jar transform https://myblog.com 123 post
               java -jar aem-transformer.jar transform https://mysite.com 45 page
+              java -jar aem-transformer.jar transform-url https://example.com/news/my-post/
 
             """);
+    }
+
+    private void handleTransformUrl(String[] args) {
+        if (args.length < 2) {
+            log.error("Usage: transform-url <wordpress-article-url>");
+            return;
+        }
+
+        String url = args[1];
+        log.info("Starting transformation for URL: {}", url);
+
+        try {
+            var outputPath = transformationService.transformByUrl(url);
+            log.info("Transformation completed successfully!");
+            log.info("Output written to: {}", outputPath);
+        } catch (Exception e) {
+            log.error("Transformation failed: {}", e.getMessage(), e);
+            System.exit(1);
+        }
     }
 }

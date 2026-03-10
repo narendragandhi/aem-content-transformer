@@ -24,6 +24,10 @@ public class AemGeneratorAgent {
 
     /**
      * Generates an AEM page from content analysis and component mappings.
+     *
+     * @param analysis content analysis results
+     * @param mappings component mappings
+     * @return generated AEM page
      */
     public AemPage generate(ContentAnalysis analysis, List<ComponentMapping> mappings) {
         log.info("Generating AEM page: {} with {} components",
@@ -59,12 +63,12 @@ public class AemGeneratorAgent {
 
     private AemComponent createComponent(ComponentMapping mapping) {
         AemComponentType type = mapping.getTargetComponent();
-        Map<String, Object> props = mapping.getProperties();
 
         return switch (type) {
             case TITLE -> createTitleComponent(mapping);
             case TEXT -> createTextComponent(mapping);
             case IMAGE -> createImageComponent(mapping);
+            case LIST -> createListComponent(mapping);
             case SEPARATOR -> createSeparatorComponent(mapping);
             case CAROUSEL -> createCarouselComponent(mapping);
             case EMBED -> createEmbedComponent(mapping);
@@ -105,16 +109,29 @@ public class AemGeneratorAgent {
                 .build();
     }
 
+    private ListComponent createListComponent(ComponentMapping mapping) {
+        Map<String, Object> props = mapping.getProperties() != null ? mapping.getProperties() : Map.of();
+
+        @SuppressWarnings("unchecked")
+        List<String> items = (List<String>) props.get("items");
+
+        return ListComponent.builder()
+                .componentName(mapping.getComponentName())
+                .items(items)
+                .ordered(getBoolean(props, "ordered", false))
+                .build();
+    }
+
     private SeparatorComponent createSeparatorComponent(ComponentMapping mapping) {
         return SeparatorComponent.builder()
                 .componentName(mapping.getComponentName())
                 .build();
     }
 
-    private ContainerComponent createCarouselComponent(ComponentMapping mapping) {
-        Map<String, Object> props = mapping.getProperties();
+    private CarouselComponent createCarouselComponent(ComponentMapping mapping) {
+        Map<String, Object> props = mapping.getProperties() != null ? mapping.getProperties() : Map.of();
 
-        ContainerComponent carousel = ContainerComponent.builder()
+        CarouselComponent carousel = CarouselComponent.builder()
                 .componentName(mapping.getComponentName())
                 .build();
 
@@ -128,15 +145,15 @@ public class AemGeneratorAgent {
                         .fileReference(item.get("fileReference"))
                         .alt(item.get("alt"))
                         .build();
-                carousel.addChild(image);
+                carousel.addItem(image);
             }
         }
 
         return carousel;
     }
 
-    private TextComponent createEmbedComponent(ComponentMapping mapping) {
-        Map<String, Object> props = mapping.getProperties();
+    private AemComponent createEmbedComponent(ComponentMapping mapping) {
+        Map<String, Object> props = mapping.getProperties() != null ? mapping.getProperties() : Map.of();
         String url = getString(props, "url");
         String sanitizedUrl = sanitizeUrl(url);
 
@@ -149,12 +166,10 @@ public class AemGeneratorAgent {
                     .build();
         }
 
-        String embedHtml = "<div class=\"embed-container\"><iframe src=\"" + sanitizedUrl + "\" sandbox=\"allow-scripts allow-same-origin\"></iframe></div>";
-
-        return TextComponent.builder()
+        return EmbedComponent.builder()
                 .componentName(mapping.getComponentName())
-                .text(embedHtml)
-                .textIsRich(true)
+                .url(sanitizedUrl)
+                .embedType(getString(props, "embedType"))
                 .build();
     }
 
