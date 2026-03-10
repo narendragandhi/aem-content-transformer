@@ -29,6 +29,12 @@ public class AemGeneratorAgent {
     @Value("${aem.design-path:}")
     private String designPath = "";
 
+    @Value("${aem.allowed-templates:}")
+    private String allowedTemplates = "";
+
+    @Value("${aem.cloudservice-configs:}")
+    private String cloudServiceConfigs = "";
+
     /**
      * Generates an AEM page from content analysis and component mappings.
      *
@@ -59,6 +65,8 @@ public class AemGeneratorAgent {
                 .description(analysis.getPageDescription())
                 .template(resolveOptional(templatePath))
                 .designPath(resolveOptional(designPath))
+                .allowedTemplates(splitCsv(allowedTemplates))
+                .cloudServiceConfigs(splitCsv(cloudServiceConfigs))
                 .root(rootNode)
                 .build();
 
@@ -76,6 +84,22 @@ public class AemGeneratorAgent {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String[] splitCsv(String value) {
+        String trimmed = resolveOptional(value);
+        if (trimmed == null) {
+            return null;
+        }
+        String[] parts = trimmed.split(",");
+        List<String> cleaned = new java.util.ArrayList<>();
+        for (String part : parts) {
+            String segment = part.trim();
+            if (!segment.isEmpty()) {
+                cleaned.add(segment);
+            }
+        }
+        return cleaned.isEmpty() ? null : cleaned.toArray(new String[0]);
     }
 
     private AemComponent createComponent(ComponentMapping mapping) {

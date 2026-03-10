@@ -33,6 +33,8 @@ aem:
   template-path: ${AEM_TEMPLATE_PATH:/conf/mysite/settings/wcm/templates/content-page}
   design-path: ${AEM_DESIGN_PATH:}
   asset-download: ${AEM_ASSET_DOWNLOAD:true}
+  allowed-templates: ${AEM_ALLOWED_TEMPLATES:}
+  cloudservice-configs: ${AEM_CLOUDSERVICE_CONFIGS:}
 
 # Logging configuration
 logging:

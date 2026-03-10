@@ -59,6 +59,12 @@ public class AemPage implements Serializable {
         @JsonProperty("cq:designPath")
         private String designPath;
 
+        @JsonProperty("cq:allowedTemplates")
+        private String[] allowedTemplates;
+
+        @JsonProperty("cq:cloudserviceconfigs")
+        private String[] cloudServiceConfigs;
+
         private ComponentNode root;
     }
 

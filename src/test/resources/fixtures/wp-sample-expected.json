@@ -8,6 +8,8 @@
     "cq:tags": null,
     "cq:template": "/conf/mysite/settings/wcm/templates/content-page",
     "cq:designPath": null,
+    "cq:allowedTemplates": null,
+    "cq:cloudserviceconfigs": null,
     "root": {
       "jcr:primaryType": "nt:unstructured",
       "sling:resourceType": "core/wcm/components/container/v1/container",
