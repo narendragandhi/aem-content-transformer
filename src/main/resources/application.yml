@@ -76,3 +76,10 @@ logging:
 # Server configuration (optional, for REST API)
 server:
   port: ${SERVER_PORT:8080}
+
+migration:
+  batch:
+    checkpoint:
+      enabled: ${MIGRATION_CHECKPOINT_ENABLED:true}
+      interval: ${MIGRATION_CHECKPOINT_INTERVAL:100}
+      path: ${MIGRATION_CHECKPOINT_PATH:./output/checkpoint.json}

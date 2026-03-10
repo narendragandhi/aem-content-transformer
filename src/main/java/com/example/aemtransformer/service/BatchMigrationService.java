@@ -34,6 +34,15 @@ public class BatchMigrationService {
     @Value("${migration.batch.concurrency:4}")
     private int concurrency;
 
+    @Value("${migration.batch.checkpoint.enabled:true}")
+    private boolean checkpointEnabled;
+
+    @Value("${migration.batch.checkpoint.interval:100}")
+    private int checkpointInterval;
+
+    @Value("${migration.batch.checkpoint.path:./output/checkpoint.json}")
+    private String checkpointPath;
+
     /**
      * Runs a batch migration with checkpointing.
      *
@@ -49,6 +58,11 @@ public class BatchMigrationService {
         CompletionService<MigrationManifestEntry> completionService = new ExecutorCompletionService<>(executor);
 
         int page = 1;
+        int startPage = 1;
+        if (checkpointEnabled) {
+            startPage = loadCheckpoint();
+            page = Math.max(1, startPage);
+        }
         int totalProcessed = 0;
         int successCount = 0;
         int failureCount = 0;
@@ -105,11 +119,17 @@ public class BatchMigrationService {
                 }
 
                 page++;
+                if (checkpointEnabled && (page - startPage) % Math.max(1, checkpointInterval) == 0) {
+                    saveCheckpoint(page);
+                }
             }
         } finally {
             shutdownExecutor(executor);
         }
 
+        if (checkpointEnabled) {
+            saveCheckpoint(page);
+        }
         return new BatchResult(totalProcessed, successCount, failureCount, skippedCount);
     }
 
@@ -194,6 +214,33 @@ public class BatchMigrationService {
         } catch (InterruptedException e) {
             executor.shutdownNow();
             Thread.currentThread().interrupt();
+        }
+    }
+
+    private int loadCheckpoint() {
+        try {
+            Path path = Path.of(checkpointPath);
+            if (!Files.exists(path)) {
+                return 1;
+            }
+            String raw = Files.readString(path).trim();
+            if (raw.isBlank()) {
+                return 1;
+            }
+            return Integer.parseInt(raw);
+        } catch (Exception e) {
+            log.warn("Failed to load checkpoint; starting from page 1");
+            return 1;
+        }
+    }
+
+    private void saveCheckpoint(int page) {
+        try {
+            Path path = Path.of(checkpointPath);
+            Files.createDirectories(path.getParent());
+            Files.writeString(path, Integer.toString(page));
+        } catch (Exception e) {
+            log.warn("Failed to write checkpoint at page {}", page);
         }
     }
 
