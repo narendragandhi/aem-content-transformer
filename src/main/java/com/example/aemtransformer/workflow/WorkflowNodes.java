@@ -13,6 +13,7 @@ import com.example.aemtransformer.model.WordPressContent;
 import com.example.aemtransformer.service.AemOutputService;
 import com.example.aemtransformer.service.ContentFragmentService;
 import com.example.aemtransformer.service.ExperienceFragmentService;
+import com.example.aemtransformer.service.ParityReportService;
 import com.example.aemtransformer.service.TagMappingService;
 import com.example.aemtransformer.service.TagOutputService;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +46,7 @@ public class WorkflowNodes {
     private final TagOutputService tagOutputService;
     private final ContentFragmentService contentFragmentService;
     private final ExperienceFragmentService experienceFragmentService;
+    private final ParityReportService parityReportService;
 
     /**
      * Scrapes content from WordPress.
@@ -265,6 +267,8 @@ public class WorkflowNodes {
                     outputPath = outputService.zipPackage(result.packageRoot());
                 }
             }
+
+            parityReportService.append(content, state.getContentAnalysis(), page, outputPath.toString());
 
             updates.put(OUTPUT_PATH_KEY, outputPath.toString());
             updates.put(CURRENT_PHASE_KEY, "completed");

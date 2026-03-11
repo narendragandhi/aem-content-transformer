@@ -42,6 +42,9 @@ public class BatchMigrationService {
     @Value("${migration.batch.skip-output-check:false}")
     private boolean skipOutputCheck;
 
+    @Value("${migration.delta.since:}")
+    private String deltaSince;
+
     @Value("${aem.template-path:/conf/mysite/settings/wcm/templates/content-page}")
     private String templatePath;
 
@@ -113,6 +116,11 @@ public class BatchMigrationService {
                 int submitted = 0;
                 for (WordPressContent content : contents) {
                     totalProcessed++;
+                    if (isDeltaSkip(content)) {
+                        skippedCount++;
+                        manifestStore.append(buildSkippedEntry(sourceUrl, contentType, content, "delta-skip"));
+                        continue;
+                    }
                     String key = buildKey(sourceUrl, contentType, content);
 
                     MigrationManifestEntry previous = existing.get(key);
@@ -230,6 +238,40 @@ public class BatchMigrationService {
                     Instant.now()
             );
         }
+    }
+
+    private boolean isDeltaSkip(WordPressContent content) {
+        if (deltaSince == null || deltaSince.isBlank() || content == null || content.getModifiedDate() == null) {
+            return false;
+        }
+        try {
+            java.time.Instant cutoff = java.time.Instant.parse(deltaSince);
+            java.time.Instant modified = content.getModifiedDate()
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .toInstant();
+            return modified.isBefore(cutoff);
+        } catch (Exception e) {
+            log.warn("Invalid migration.delta.since value: {}", deltaSince);
+            return false;
+        }
+    }
+
+    private MigrationManifestEntry buildSkippedEntry(String sourceUrl, String contentType, WordPressContent content,
+                                                     String reason) {
+        return new MigrationManifestEntry(
+                buildKey(sourceUrl, contentType, content),
+                sourceUrl,
+                contentType,
+                content.getId(),
+                content.getSlug(),
+                valueOrNull(content.getModifiedDate()),
+                MigrationManifestEntry.Status.SKIPPED,
+                null,
+                reason,
+                0,
+                0,
+                Instant.now()
+        );
     }
 
     private String buildKey(String sourceUrl, String contentType, WordPressContent content) {

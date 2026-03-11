@@ -119,9 +119,14 @@ migration:
       path: ${MIGRATION_CHECKPOINT_PATH:./output/checkpoint.json}
     retry-failed: ${MIGRATION_RETRY_FAILED:true}
     skip-output-check: ${MIGRATION_SKIP_OUTPUT_CHECK:false}
+  delta:
+    since: ${MIGRATION_DELTA_SINCE:}
   manifest:
     filename: ${MIGRATION_MANIFEST_FILENAME:manifest.jsonl}
   dlq:
     filename: ${MIGRATION_DLQ_FILENAME:dlq.jsonl}
   report:
     path: ${MIGRATION_REPORT_PATH:./output/report.json}
+  parity:
+    enabled: ${MIGRATION_PARITY_ENABLED:true}
+    filename: ${MIGRATION_PARITY_FILENAME:parity.jsonl}
