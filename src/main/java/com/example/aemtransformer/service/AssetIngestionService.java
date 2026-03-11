@@ -60,6 +60,18 @@ public class AssetIngestionService {
     @Value("${aem.asset.api.auth.token:}")
     private String assetApiAuthToken;
 
+    @Value("${aem.asset.api.verify.enabled:false}")
+    private boolean assetVerifyEnabled;
+
+    @Value("${aem.asset.api.verify-url-template:}")
+    private String assetVerifyUrlTemplate;
+
+    @Value("${aem.asset.api.verify.timeout-ms:60000}")
+    private long assetVerifyTimeoutMs;
+
+    @Value("${aem.asset.api.verify.interval-ms:2000}")
+    private long assetVerifyIntervalMs;
+
     @Value("${aem.asset.retry.max-attempts:3}")
     private int assetRetryAttempts;
 
@@ -249,7 +261,8 @@ public class AssetIngestionService {
                         .retrieve()
                         .toBodilessEntity();
                 throttle(assetUploadDelayMs);
-                return "uploaded";
+                boolean verified = verifyAssetAvailable(client, damPath);
+                return verified ? "uploaded" : "verify_failed";
             } catch (Exception e) {
                 log.warn("Asset API upload failed (attempt {}/{}): {}", attempts, assetRetryAttempts, damPath);
                 throttle(assetRetryDelayMs * attempts);
@@ -273,6 +286,47 @@ public class AssetIngestionService {
                 request.header(HttpHeaders.AUTHORIZATION, "Bearer " + assetApiAuthToken.trim());
             }
         }
+    }
+
+    private void applyAuth(RestClient.RequestHeadersSpec<?> request) {
+        String type = assetApiAuthType != null ? assetApiAuthType.trim().toLowerCase() : "";
+        if ("basic".equals(type)) {
+            if (assetApiAuthUser != null && assetApiAuthPassword != null) {
+                String basic = java.util.Base64.getEncoder()
+                        .encodeToString((assetApiAuthUser + ":" + assetApiAuthPassword).getBytes());
+                request.header(HttpHeaders.AUTHORIZATION, "Basic " + basic);
+            }
+            return;
+        }
+        if ("bearer".equals(type)) {
+            if (assetApiAuthToken != null && !assetApiAuthToken.isBlank()) {
+                request.header(HttpHeaders.AUTHORIZATION, "Bearer " + assetApiAuthToken.trim());
+            }
+        }
+    }
+
+    private boolean verifyAssetAvailable(RestClient client, String damPath) {
+        if (!assetVerifyEnabled) {
+            return true;
+        }
+        if (assetVerifyUrlTemplate == null || assetVerifyUrlTemplate.isBlank()) {
+            log.warn("Asset verify enabled but verify URL template is not configured.");
+            return false;
+        }
+        String verifyUrl = assetVerifyUrlTemplate.replace("{damPath}", damPath);
+        long deadline = System.currentTimeMillis() + Math.max(0, assetVerifyTimeoutMs);
+        while (System.currentTimeMillis() <= deadline) {
+            try {
+                RestClient.RequestHeadersSpec<?> request = client.get().uri(verifyUrl);
+                applyAuth(request);
+                rateLimiter.acquireAem();
+                request.retrieve().toBodilessEntity();
+                return true;
+            } catch (Exception e) {
+                throttle((int) Math.max(100, assetVerifyIntervalMs));
+            }
+        }
+        return false;
     }
 
     private record AssetRef(String fileReference, String sourceUrl) {}

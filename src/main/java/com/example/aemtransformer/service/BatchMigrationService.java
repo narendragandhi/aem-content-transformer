@@ -39,6 +39,9 @@ public class BatchMigrationService {
     @Value("${migration.batch.retry-failed:true}")
     private boolean retryFailed;
 
+    @Value("${migration.batch.skip-output-check:false}")
+    private boolean skipOutputCheck;
+
     @Value("${aem.template-path:/conf/mysite/settings/wcm/templates/content-page}")
     private String templatePath;
 
@@ -47,6 +50,9 @@ public class BatchMigrationService {
 
     @Value("${aem.tags.root:/content/cq:tags/mysite}")
     private String tagRoot;
+
+    @Value("${aem.validation.extra-paths:}")
+    private String extraValidationPaths;
 
     @Value("${migration.batch.checkpoint.enabled:true}")
     private boolean checkpointEnabled;
@@ -67,10 +73,14 @@ public class BatchMigrationService {
      * @return batch result summary
      */
     public BatchResult runBatch(String sourceUrl, String contentType, int perPage, int maxPages) {
+        long batchStart = System.currentTimeMillis();
         validationService.checkHealth();
         validationService.validatePath("template", templatePath);
         validationService.validatePath("fragment-model", fragmentModel);
         validationService.validatePath("tag-root", tagRoot);
+        for (String path : parseCsv(extraValidationPaths)) {
+            validationService.validatePath("extra", path);
+        }
 
         Map<String, MigrationManifestEntry> existing = manifestStore.loadLatestEntries();
         ExecutorService executor = Executors.newFixedThreadPool(Math.max(1, concurrency));
@@ -108,8 +118,8 @@ public class BatchMigrationService {
                     MigrationManifestEntry previous = existing.get(key);
                     if (previous != null
                             && previous.status() == MigrationManifestEntry.Status.SUCCESS
-                            && previous.outputPath() != null
-                            && Files.exists(Path.of(previous.outputPath()))) {
+                            && (skipOutputCheck
+                                || (previous.outputPath() != null && Files.exists(Path.of(previous.outputPath()))))) {
                         skippedCount++;
                         manifestStore.append(previous);
                         continue;
@@ -158,7 +168,8 @@ public class BatchMigrationService {
             saveCheckpoint(page);
         }
         BatchResult result = new BatchResult(totalProcessed, successCount, failureCount, skippedCount);
-        reportService.writeReport(result, manifestStore.getManifestPath(), manifestStore.getDlqPath());
+        long durationMs = System.currentTimeMillis() - batchStart;
+        reportService.writeReport(result, manifestStore.getManifestPath(), manifestStore.getDlqPath(), durationMs);
         return result;
     }
 
@@ -272,6 +283,20 @@ public class BatchMigrationService {
         } catch (Exception e) {
             log.warn("Failed to write checkpoint at page {}", page);
         }
+    }
+
+    private List<String> parseCsv(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        List<String> items = new java.util.ArrayList<>();
+        for (String part : raw.split(",")) {
+            String value = part.trim();
+            if (!value.isEmpty()) {
+                items.add(value);
+            }
+        }
+        return items;
     }
 
     public record BatchResult(int totalProcessed, int successCount, int failureCount, int skippedCount) {}

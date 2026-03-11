@@ -24,7 +24,7 @@ public class MigrationReportService {
     @Value("${migration.report.path:./output/report.json}")
     private String reportPath;
 
-    public void writeReport(BatchResult result, Path manifestPath, Path dlqPath) {
+    public void writeReport(BatchResult result, Path manifestPath, Path dlqPath, long durationMs) {
         try {
             Path path = Path.of(reportPath);
             Files.createDirectories(path.getParent());
@@ -34,6 +34,10 @@ public class MigrationReportService {
             report.put("successCount", result.successCount());
             report.put("failureCount", result.failureCount());
             report.put("skippedCount", result.skippedCount());
+            report.put("durationMs", durationMs);
+            report.put("itemsPerSecond", durationMs > 0
+                    ? (result.totalProcessed() * 1000.0 / durationMs)
+                    : 0.0);
             report.put("manifestPath", manifestPath != null ? manifestPath.toString() : null);
             report.put("dlqPath", dlqPath != null ? dlqPath.toString() : null);
 

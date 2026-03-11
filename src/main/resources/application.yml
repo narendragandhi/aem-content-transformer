@@ -55,6 +55,11 @@ aem:
     api:
       enabled: ${AEM_ASSET_API_ENABLED:false}
       upload-url-template: ${AEM_ASSET_API_UPLOAD_URL:}
+      verify:
+        enabled: ${AEM_ASSET_API_VERIFY_ENABLED:false}
+        verify-url-template: ${AEM_ASSET_API_VERIFY_URL:}
+        timeout-ms: ${AEM_ASSET_API_VERIFY_TIMEOUT_MS:60000}
+        interval-ms: ${AEM_ASSET_API_VERIFY_INTERVAL_MS:2000}
       auth:
         type: ${AEM_ASSET_API_AUTH_TYPE:}
         user: ${AEM_ASSET_API_AUTH_USER:}
@@ -80,6 +85,7 @@ aem:
     enabled: ${AEM_VALIDATION_ENABLED:false}
     base-url: ${AEM_VALIDATION_BASE_URL:}
     health-path: ${AEM_VALIDATION_HEALTH_PATH:/system/health.json}
+    extra-paths: ${AEM_VALIDATION_EXTRA_PATHS:}
     auth:
       type: ${AEM_VALIDATION_AUTH_TYPE:}
       user: ${AEM_VALIDATION_AUTH_USER:}
@@ -112,6 +118,7 @@ migration:
       interval: ${MIGRATION_CHECKPOINT_INTERVAL:100}
       path: ${MIGRATION_CHECKPOINT_PATH:./output/checkpoint.json}
     retry-failed: ${MIGRATION_RETRY_FAILED:true}
+    skip-output-check: ${MIGRATION_SKIP_OUTPUT_CHECK:false}
   manifest:
     filename: ${MIGRATION_MANIFEST_FILENAME:manifest.jsonl}
   dlq:
