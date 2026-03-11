@@ -31,6 +31,9 @@ public class MigrationManifestStore {
     @Value("${migration.manifest.filename:manifest.jsonl}")
     private String manifestFilename;
 
+    @Value("${migration.dlq.filename:dlq.jsonl}")
+    private String dlqFilename;
+
     /**
      * Loads the latest entry for each content key.
      */
@@ -72,7 +75,22 @@ public class MigrationManifestStore {
         }
     }
 
+    public void appendDlq(MigrationManifestEntry entry) {
+        Path dlq = getDlqPath();
+        try {
+            Files.createDirectories(dlq.getParent());
+            String line = objectMapper.writeValueAsString(entry) + System.lineSeparator();
+            Files.writeString(dlq, line, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (IOException e) {
+            log.warn("Failed to append DLQ entry: {}", e.getMessage());
+        }
+    }
+
     public Path getManifestPath() {
         return Path.of(outputPath, manifestFilename);
+    }
+
+    public Path getDlqPath() {
+        return Path.of(outputPath, dlqFilename);
     }
 }

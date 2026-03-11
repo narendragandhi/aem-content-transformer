@@ -30,9 +30,23 @@ public class BatchMigrationService {
 
     private final TransformationService transformationService;
     private final MigrationManifestStore manifestStore;
+    private final AemValidationService validationService;
+    private final MigrationReportService reportService;
 
     @Value("${migration.batch.concurrency:4}")
     private int concurrency;
+
+    @Value("${migration.batch.retry-failed:true}")
+    private boolean retryFailed;
+
+    @Value("${aem.template-path:/conf/mysite/settings/wcm/templates/content-page}")
+    private String templatePath;
+
+    @Value("${aem.fragments.content-model:/conf/mysite/settings/dam/cfm/models/article}")
+    private String fragmentModel;
+
+    @Value("${aem.tags.root:/content/cq:tags/mysite}")
+    private String tagRoot;
 
     @Value("${migration.batch.checkpoint.enabled:true}")
     private boolean checkpointEnabled;
@@ -53,6 +67,10 @@ public class BatchMigrationService {
      * @return batch result summary
      */
     public BatchResult runBatch(String sourceUrl, String contentType, int perPage, int maxPages) {
+        validationService.validatePath("template", templatePath);
+        validationService.validatePath("fragment-model", fragmentModel);
+        validationService.validatePath("tag-root", tagRoot);
+
         Map<String, MigrationManifestEntry> existing = manifestStore.loadLatestEntries();
         ExecutorService executor = Executors.newFixedThreadPool(Math.max(1, concurrency));
         CompletionService<MigrationManifestEntry> completionService = new ExecutorCompletionService<>(executor);
@@ -96,8 +114,15 @@ public class BatchMigrationService {
                         continue;
                     }
 
+                    if (previous != null && previous.status() == MigrationManifestEntry.Status.FAILED && !retryFailed) {
+                        skippedCount++;
+                        manifestStore.append(previous);
+                        continue;
+                    }
+
+                    int attempt = previous != null ? previous.attempts() + 1 : 1;
                     submitted++;
-                    completionService.submit(() -> processContent(sourceUrl, contentType, content));
+                    completionService.submit(() -> processContent(sourceUrl, contentType, content, attempt));
                 }
 
                 for (int i = 0; i < submitted; i++) {
@@ -111,6 +136,7 @@ public class BatchMigrationService {
                             skippedCount++;
                         } else {
                             failureCount++;
+                            manifestStore.appendDlq(entry);
                         }
                     } catch (Exception e) {
                         failureCount++;
@@ -130,10 +156,13 @@ public class BatchMigrationService {
         if (checkpointEnabled) {
             saveCheckpoint(page);
         }
-        return new BatchResult(totalProcessed, successCount, failureCount, skippedCount);
+        BatchResult result = new BatchResult(totalProcessed, successCount, failureCount, skippedCount);
+        reportService.writeReport(result, manifestStore.getManifestPath(), manifestStore.getDlqPath());
+        return result;
     }
 
-    private MigrationManifestEntry processContent(String sourceUrl, String contentType, WordPressContent content) {
+    private MigrationManifestEntry processContent(String sourceUrl, String contentType, WordPressContent content,
+                                                  int attempt) {
         long start = System.currentTimeMillis();
         String key = buildKey(sourceUrl, contentType, content);
 
@@ -152,7 +181,7 @@ public class BatchMigrationService {
                         MigrationManifestEntry.Status.SUCCESS,
                         result.outputPath(),
                         null,
-                        1,
+                        attempt,
                         duration,
                         Instant.now()
                 );
@@ -168,7 +197,7 @@ public class BatchMigrationService {
                     MigrationManifestEntry.Status.FAILED,
                     null,
                     result.errorMessage(),
-                    1,
+                    attempt,
                     duration,
                     Instant.now()
             );
@@ -184,7 +213,7 @@ public class BatchMigrationService {
                     MigrationManifestEntry.Status.FAILED,
                     null,
                     e.getMessage(),
-                    1,
+                    attempt,
                     duration,
                     Instant.now()
             );

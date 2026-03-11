@@ -37,8 +37,9 @@ public class AssetIngestionService {
 
     private final ObjectMapper objectMapper;
     private final RestClient.Builder restClientBuilder;
+    private final RateLimiterService rateLimiter;
 
-    @Value("${aem.asset-download:true}")
+    @Value("${aem.asset.download:true}")
     private boolean assetDownloadEnabled;
 
     @Value("${aem.asset.api.enabled:false}")
@@ -58,6 +59,21 @@ public class AssetIngestionService {
 
     @Value("${aem.asset.api.auth.token:}")
     private String assetApiAuthToken;
+
+    @Value("${aem.asset.retry.max-attempts:3}")
+    private int assetRetryAttempts;
+
+    @Value("${aem.asset.retry.delay-ms:1000}")
+    private int assetRetryDelayMs;
+
+    @Value("${aem.asset.max-bytes:52428800}")
+    private long assetMaxBytes;
+
+    @Value("${aem.asset.download.delay-ms:0}")
+    private int assetDownloadDelayMs;
+
+    @Value("${aem.asset.upload.delay-ms:0}")
+    private int assetUploadDelayMs;
 
     public void ingestAssets(AemPage page, Path packageRoot) {
         if (!assetDownloadEnabled) {
@@ -120,13 +136,15 @@ public class AssetIngestionService {
         String sourceUrl = ref.sourceUrl();
 
         try {
-            byte[] data = client.get()
-                    .uri(sourceUrl)
-                    .retrieve()
-                    .body(byte[].class);
+            byte[] data = downloadWithRetry(client, sourceUrl);
 
             if (data == null || data.length == 0) {
                 return AssetManifestEntry.failed(damPath, sourceUrl, "Empty response");
+            }
+
+            if (assetMaxBytes > 0 && data.length > assetMaxBytes) {
+                return AssetManifestEntry.failed(damPath, sourceUrl,
+                        "Asset exceeds max size: " + data.length + " bytes");
             }
 
             Path assetDir = jcrRoot.resolve(damPath.replaceFirst("^/", ""));
@@ -136,10 +154,13 @@ public class AssetIngestionService {
 
             String mimeType = guessMimeType(damPath, data);
             String uploadStatus = maybeUploadToAem(client, damPath, data, mimeType);
-            return AssetManifestEntry.success(damPath, sourceUrl, assetDir, data.length, mimeType, uploadStatus);
+            String checksum = sha256Hex(data);
+            return AssetManifestEntry.success(damPath, sourceUrl, assetDir, data.length, mimeType, uploadStatus, checksum);
         } catch (Exception e) {
             log.warn("Failed to ingest asset {} from {}", damPath, sourceUrl, e);
             return AssetManifestEntry.failed(damPath, sourceUrl, e.getMessage());
+        } finally {
+            throttle(assetDownloadDelayMs);
         }
     }
 
@@ -215,19 +236,26 @@ public class AssetIngestionService {
             return "skipped";
         }
 
-        try {
-            String uploadUrl = assetApiUploadUrlTemplate.replace("{damPath}", damPath);
-            RestClient.RequestBodySpec request = client.post().uri(uploadUrl);
-            applyAuth(request);
-            request.header(HttpHeaders.CONTENT_TYPE, mimeType != null ? mimeType : MediaType.APPLICATION_OCTET_STREAM_VALUE)
-                    .body(data)
-                    .retrieve()
-                    .toBodilessEntity();
-            return "uploaded";
-        } catch (Exception e) {
-            log.warn("Asset API upload failed for {}", damPath, e);
-            return "failed";
+        String uploadUrl = assetApiUploadUrlTemplate.replace("{damPath}", damPath);
+        int attempts = 0;
+        while (attempts < Math.max(1, assetRetryAttempts)) {
+            attempts++;
+            try {
+                RestClient.RequestBodySpec request = client.post().uri(uploadUrl);
+                rateLimiter.acquireAem();
+                applyAuth(request);
+                request.header(HttpHeaders.CONTENT_TYPE, mimeType != null ? mimeType : MediaType.APPLICATION_OCTET_STREAM_VALUE)
+                        .body(data)
+                        .retrieve()
+                        .toBodilessEntity();
+                throttle(assetUploadDelayMs);
+                return "uploaded";
+            } catch (Exception e) {
+                log.warn("Asset API upload failed (attempt {}/{}): {}", attempts, assetRetryAttempts, damPath);
+                throttle(assetRetryDelayMs * attempts);
+            }
         }
+        return "failed";
     }
 
     private void applyAuth(RestClient.RequestBodySpec request) {
@@ -257,18 +285,62 @@ public class AssetIngestionService {
             String mimeType,
             String status,
             String uploadStatus,
+            String checksum,
             String error
     ) {
         static AssetManifestEntry success(String damPath, String sourceUrl, Path localPath, int bytes, String mimeType,
-                                          String uploadStatus) {
+                                          String uploadStatus, String checksum) {
             return new AssetManifestEntry(damPath, sourceUrl,
                     localPath != null ? localPath.toString() : null,
-                    bytes, mimeType, "success", uploadStatus, null);
+                    bytes, mimeType, "success", uploadStatus, checksum, null);
         }
 
         static AssetManifestEntry failed(String damPath, String sourceUrl, String error) {
             return new AssetManifestEntry(damPath, sourceUrl, null, 0,
-                    null, "failed", "failed", Objects.toString(error, "unknown"));
+                    null, "failed", "failed", null, Objects.toString(error, "unknown"));
+        }
+    }
+
+    private byte[] downloadWithRetry(RestClient client, String sourceUrl) {
+        int attempts = 0;
+        while (attempts < Math.max(1, assetRetryAttempts)) {
+            attempts++;
+            try {
+                rateLimiter.acquireWp();
+                return client.get()
+                        .uri(sourceUrl)
+                        .retrieve()
+                        .body(byte[].class);
+            } catch (Exception e) {
+                log.warn("Asset download failed (attempt {}/{}): {}", attempts, assetRetryAttempts, sourceUrl);
+                throttle(assetRetryDelayMs * attempts);
+            }
+        }
+        return null;
+    }
+
+    private String sha256Hex(byte[] data) {
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(data);
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void throttle(int delayMs) {
+        if (delayMs <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(delayMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 }

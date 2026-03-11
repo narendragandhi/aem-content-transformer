@@ -21,6 +21,7 @@ public class WordPressTaxonomyService {
 
     private final RestClient.Builder restClientBuilder;
     private final ObjectMapper objectMapper;
+    private final RateLimiterService rateLimiter;
 
     @Value("${wordpress.api-path:/wp-json/wp/v2}")
     private String apiPath;
@@ -66,6 +67,7 @@ public class WordPressTaxonomyService {
         String fullUrl = baseUrl + endpoint;
         try {
             RestClient client = restClientBuilder.baseUrl(baseUrl).build();
+            rateLimiter.acquireWp();
             String response = client.get()
                     .uri(endpoint)
                     .retrieve()
@@ -90,6 +92,7 @@ public class WordPressTaxonomyService {
 
         try {
             RestClient client = restClientBuilder.baseUrl(baseUrl).build();
+            rateLimiter.acquireWp();
             String response = client.get()
                     .uri(endpoint)
                     .retrieve()

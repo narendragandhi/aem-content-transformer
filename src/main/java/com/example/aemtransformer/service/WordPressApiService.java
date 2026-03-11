@@ -26,6 +26,7 @@ public class WordPressApiService {
 
     private final RestClient.Builder restClientBuilder;
     private final ObjectMapper objectMapper;
+    private final RateLimiterService rateLimiter;
 
     @Value("${wordpress.api-path:/wp-json/wp/v2}")
     private String apiPath;
@@ -42,9 +43,11 @@ public class WordPressApiService {
     @Value("${wordpress.retry.delay-ms:1000}")
     private int retryDelayMs;
 
-    public WordPressApiService(RestClient.Builder restClientBuilder, ObjectMapper objectMapper) {
+    public WordPressApiService(RestClient.Builder restClientBuilder, ObjectMapper objectMapper,
+                               RateLimiterService rateLimiter) {
         this.restClientBuilder = restClientBuilder;
         this.objectMapper = objectMapper;
+        this.rateLimiter = rateLimiter;
     }
 
     private RestClient createClient(String baseUrl) {
@@ -162,6 +165,7 @@ public class WordPressApiService {
         while (attempts < maxRetryAttempts) {
             attempts++;
             try {
+                rateLimiter.acquireWp();
                 return apiCall.execute();
             } catch (HttpClientErrorException.NotFound e) {
                 log.warn("Content not found at URL: {}", url);
