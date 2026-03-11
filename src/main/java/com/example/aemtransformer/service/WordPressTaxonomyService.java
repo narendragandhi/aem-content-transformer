@@ -28,7 +28,47 @@ public class WordPressTaxonomyService {
 
     private final Map<Long, String> tagCache = new ConcurrentHashMap<>();
 
+    @Value("${wordpress.tags.warmup.enabled:false}")
+    private boolean warmupEnabled;
+
+    @Value("${wordpress.tags.warmup.per-page:100}")
+    private int warmupPerPage;
+
+    @Value("${wordpress.tags.warmup.max-pages:10}")
+    private int warmupMaxPages;
+
+    public void warmUpTags(String baseUrl) {
+        if (!warmupEnabled) {
+            return;
+        }
+        int page = 1;
+        while (page <= Math.max(1, warmupMaxPages)) {
+            String endpoint = apiPath + "/tags?page=" + page + "&per_page=" + warmupPerPage;
+            try {
+                RestClient client = restClientBuilder.baseUrl(baseUrl).build();
+                rateLimiter.acquireWp();
+                String response = client.get().uri(endpoint).retrieve().body(String.class);
+                JsonNode array = objectMapper.readTree(response);
+                if (array == null || !array.isArray() || array.isEmpty()) {
+                    break;
+                }
+                for (JsonNode node : array) {
+                    JsonNode idNode = node.get("id");
+                    JsonNode nameNode = node.get("name");
+                    if (idNode != null && nameNode != null) {
+                        tagCache.putIfAbsent(idNode.asLong(), nameNode.asText());
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Tag warmup failed on page {}: {}", page, e.getMessage());
+                break;
+            }
+            page++;
+        }
+    }
+
     public List<String> resolveTagNames(String baseUrl, List<Long> tagIds) {
+        warmUpTags(baseUrl);
         if (tagIds == null || tagIds.isEmpty()) {
             return List.of();
         }

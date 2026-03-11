@@ -67,6 +67,7 @@ public class BatchMigrationService {
      * @return batch result summary
      */
     public BatchResult runBatch(String sourceUrl, String contentType, int perPage, int maxPages) {
+        validationService.checkHealth();
         validationService.validatePath("template", templatePath);
         validationService.validatePath("fragment-model", fragmentModel);
         validationService.validatePath("tag-root", tagRoot);

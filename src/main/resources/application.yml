@@ -15,6 +15,11 @@ spring:
 wordpress:
   source-url: ${WORDPRESS_URL:https://example.wordpress.com}
   api-path: /wp-json/wp/v2
+  tags:
+    warmup:
+      enabled: ${WP_TAG_WARMUP_ENABLED:false}
+      per-page: ${WP_TAG_WARMUP_PER_PAGE:100}
+      max-pages: ${WP_TAG_WARMUP_MAX_PAGES:10}
 
 # For integration test override (wordpress.org/news)
 ---
@@ -74,6 +79,7 @@ aem:
   validation:
     enabled: ${AEM_VALIDATION_ENABLED:false}
     base-url: ${AEM_VALIDATION_BASE_URL:}
+    health-path: ${AEM_VALIDATION_HEALTH_PATH:/system/health.json}
     auth:
       type: ${AEM_VALIDATION_AUTH_TYPE:}
       user: ${AEM_VALIDATION_AUTH_USER:}

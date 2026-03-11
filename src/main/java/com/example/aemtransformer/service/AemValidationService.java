@@ -33,6 +33,31 @@ public class AemValidationService {
     @Value("${aem.validation.auth.token:}")
     private String authToken;
 
+    @Value("${aem.validation.health-path:/system/health.json}")
+    private String healthPath;
+
+    public void checkHealth() {
+        if (!validationEnabled) {
+            return;
+        }
+        if (baseUrl == null || baseUrl.isBlank()) {
+            log.warn("AEM health check skipped (missing baseUrl)");
+            return;
+        }
+        String url = baseUrl + (healthPath.startsWith("/") ? healthPath : "/" + healthPath);
+        try {
+            RestClient.RequestHeadersSpec<?> request = restClientBuilder.baseUrl(baseUrl).build()
+                    .get()
+                    .uri(url);
+            applyAuth(request);
+            rateLimiter.acquireAem();
+            request.retrieve().toBodilessEntity();
+            log.info("AEM health check OK");
+        } catch (Exception e) {
+            log.warn("AEM health check failed: {}", e.getMessage());
+        }
+    }
+
     public void validatePath(String label, String path) {
         if (!validationEnabled) {
             return;
