@@ -97,4 +97,9 @@ public class WordPressContent implements Serializable {
     public String getExcerptText() {
         return excerpt != null ? excerpt.getRendered() : "";
     }
+
+    public java.time.Instant getModified() {
+        if (modifiedDate == null) return null;
+        return modifiedDate.atZone(java.time.ZoneId.systemDefault()).toInstant();
+    }
 }

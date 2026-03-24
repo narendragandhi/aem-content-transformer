@@ -43,9 +43,9 @@ public class ParityReportService {
     @Value("${aem.output-path:./output}")
     private String outputPath;
 
-    public void append(WordPressContent content, ContentAnalysis analysis, AemPage page, String outputPathValue) {
+    public double append(WordPressContent content, ContentAnalysis analysis, AemPage page, String outputPathValue) {
         if (!enabled || content == null || analysis == null || page == null || page.getContent() == null) {
-            return;
+            return 0.0;
         }
 
         String title = content.getTitleText();
@@ -82,6 +82,7 @@ public class ParityReportService {
         );
 
         writeEntry(entry);
+        return trustScore;
     }
 
     private double calculateTrustScore(boolean titleMatch, int srcImg, int aemImg, int srcLen, int aemLen) {

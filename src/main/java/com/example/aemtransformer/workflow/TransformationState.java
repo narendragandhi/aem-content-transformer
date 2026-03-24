@@ -34,6 +34,7 @@ public class TransformationState extends AgentState {
     public static final String CURRENT_PHASE_KEY = "currentPhase";
     public static final String ERRORS_KEY = "errors";
     public static final String RETRY_COUNT_KEY = "retryCount";
+    public static final String TRUST_SCORE_KEY = "trustScore";
 
     public static final Map<String, Channel<?>> SCHEMA = Map.ofEntries(
             Map.entry(SOURCE_URL_KEY, Channel.of((Supplier<String>) () -> "")),
@@ -47,7 +48,8 @@ public class TransformationState extends AgentState {
             Map.entry(OUTPUT_PATH_KEY, Channel.of((Supplier<String>) () -> "")),
             Map.entry(CURRENT_PHASE_KEY, Channel.of((Supplier<String>) () -> "init")),
             Map.entry(ERRORS_KEY, Channel.of((Supplier<List<String>>) ArrayList::new)),
-            Map.entry(RETRY_COUNT_KEY, Channel.of((Supplier<Integer>) () -> 0))
+            Map.entry(RETRY_COUNT_KEY, Channel.of((Supplier<Integer>) () -> 0)),
+            Map.entry(TRUST_SCORE_KEY, Channel.of((Supplier<Double>) () -> 0.0))
     );
 
     public TransformationState(Map<String, Object> initData) {
@@ -124,6 +126,14 @@ public class TransformationState extends AgentState {
             return ((Number) val).intValue();
         }
         return 0;
+    }
+
+    public double getTrustScore() {
+        Object val = value(TRUST_SCORE_KEY).orElse(null);
+        if (val instanceof Number) {
+            return ((Number) val).doubleValue();
+        }
+        return 0.0;
     }
 
     public boolean hasErrors() {

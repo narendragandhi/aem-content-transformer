@@ -268,9 +268,10 @@ public class WorkflowNodes {
                 }
             }
 
-            parityReportService.append(content, state.getContentAnalysis(), page, outputPath.toString());
+            double trustScore = parityReportService.append(content, state.getContentAnalysis(), page, outputPath.toString());
 
             updates.put(OUTPUT_PATH_KEY, outputPath.toString());
+            updates.put(TRUST_SCORE_KEY, trustScore);
             updates.put(CURRENT_PHASE_KEY, "completed");
             updates.put(ERRORS_KEY, new ArrayList<>());
             updates.put(RETRY_COUNT_KEY, 0);

@@ -1,5 +1,6 @@
 package com.example.aemtransformer.service;
 
+import com.example.aemtransformer.model.MigrationLedgerEntry.MigrationStatus;
 import com.example.aemtransformer.model.MigrationManifestEntry;
 import com.example.aemtransformer.model.WordPressContent;
 import com.example.aemtransformer.workflow.TransformationWorkflow.TransformationResult;
@@ -12,7 +13,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletionService;
 import java.util.concurrent.ExecutorCompletionService;
@@ -21,7 +21,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Batch processor with checkpointing and bounded concurrency.
+ * Batch processor with Idempotent Ledger (Bead 11) and SEO Redirect Chronicle (Bead 13).
  */
 @Slf4j
 @Service
@@ -32,18 +32,14 @@ public class BatchMigrationService {
     private final MigrationManifestStore manifestStore;
     private final AemValidationService validationService;
     private final MigrationReportService reportService;
+    private final MigrationLedgerService ledgerService;
+    private final SeoRedirectService seoRedirectService;
 
     @Value("${migration.batch.concurrency:4}")
     private int concurrency;
 
     @Value("${migration.batch.retry-failed:true}")
     private boolean retryFailed;
-
-    @Value("${migration.batch.skip-output-check:false}")
-    private boolean skipOutputCheck;
-
-    @Value("${migration.delta.since:}")
-    private String deltaSince;
 
     @Value("${aem.template-path:/conf/mysite/settings/wcm/templates/content-page}")
     private String templatePath;
@@ -66,35 +62,20 @@ public class BatchMigrationService {
     @Value("${migration.batch.checkpoint.path:./output/checkpoint.json}")
     private String checkpointPath;
 
-    /**
-     * Runs a batch migration with checkpointing.
-     *
-     * @param sourceUrl WordPress base URL
-     * @param contentType content type (post/page)
-     * @param perPage page size
-     * @param maxPages max pages to scan
-     * @return batch result summary
-     */
     public BatchResult runBatch(String sourceUrl, String contentType, int perPage, int maxPages) {
         long batchStart = System.currentTimeMillis();
+        
         validationService.checkHealth();
         validationService.validatePath("template", templatePath);
         validationService.validatePath("fragment-model", fragmentModel);
         validationService.validatePath("tag-root", tagRoot);
-        for (String path : parseCsv(extraValidationPaths)) {
-            validationService.validatePath("extra", path);
-        }
 
-        Map<String, MigrationManifestEntry> existing = manifestStore.loadLatestEntries();
         ExecutorService executor = Executors.newFixedThreadPool(Math.max(1, concurrency));
         CompletionService<MigrationManifestEntry> completionService = new ExecutorCompletionService<>(executor);
 
-        int page = 1;
-        int startPage = 1;
-        if (checkpointEnabled) {
-            startPage = loadCheckpoint();
-            page = Math.max(1, startPage);
-        }
+        int page = checkpointEnabled ? loadCheckpoint() : 1;
+        int startPage = page;
+        
         int totalProcessed = 0;
         int successCount = 0;
         int failureCount = 0;
@@ -109,39 +90,20 @@ public class BatchMigrationService {
                         : transformationService.fetchAllPages(sourceUrl, page, perPage);
 
                 if (contents.isEmpty()) {
-                    log.info("No more {} found at page {}", contentType, page);
                     break;
                 }
 
                 int submitted = 0;
                 for (WordPressContent content : contents) {
                     totalProcessed++;
-                    if (isDeltaSkip(content)) {
+                    
+                    if (!ledgerService.shouldMigrate(content)) {
                         skippedCount++;
-                        manifestStore.append(buildSkippedEntry(sourceUrl, contentType, content, "delta-skip"));
-                        continue;
-                    }
-                    String key = buildKey(sourceUrl, contentType, content);
-
-                    MigrationManifestEntry previous = existing.get(key);
-                    if (previous != null
-                            && previous.status() == MigrationManifestEntry.Status.SUCCESS
-                            && (skipOutputCheck
-                                || (previous.outputPath() != null && Files.exists(Path.of(previous.outputPath()))))) {
-                        skippedCount++;
-                        manifestStore.append(previous);
                         continue;
                     }
 
-                    if (previous != null && previous.status() == MigrationManifestEntry.Status.FAILED && !retryFailed) {
-                        skippedCount++;
-                        manifestStore.append(previous);
-                        continue;
-                    }
-
-                    int attempt = previous != null ? previous.attempts() + 1 : 1;
                     submitted++;
-                    completionService.submit(() -> processContent(sourceUrl, contentType, content, attempt));
+                    completionService.submit(() -> processContent(sourceUrl, contentType, content));
                 }
 
                 for (int i = 0; i < submitted; i++) {
@@ -151,8 +113,6 @@ public class BatchMigrationService {
 
                         if (entry.status() == MigrationManifestEntry.Status.SUCCESS) {
                             successCount++;
-                        } else if (entry.status() == MigrationManifestEntry.Status.SKIPPED) {
-                            skippedCount++;
                         } else {
                             failureCount++;
                             manifestStore.appendDlq(entry);
@@ -172,115 +132,60 @@ public class BatchMigrationService {
             shutdownExecutor(executor);
         }
 
-        if (checkpointEnabled) {
-            saveCheckpoint(page);
-        }
+        if (checkpointEnabled) saveCheckpoint(page);
+
+        // PRIME TIME: Generate SEO Redirect Configs (Bead 13)
+        seoRedirectService.writeRedirectConfigs();
+
         BatchResult result = new BatchResult(totalProcessed, successCount, failureCount, skippedCount);
-        long durationMs = System.currentTimeMillis() - batchStart;
-        reportService.writeReport(result, manifestStore.getManifestPath(), manifestStore.getDlqPath(), durationMs);
+        reportService.writeReport(result, manifestStore.getManifestPath(), manifestStore.getDlqPath(), 
+                                System.currentTimeMillis() - batchStart);
         return result;
     }
 
-    private MigrationManifestEntry processContent(String sourceUrl, String contentType, WordPressContent content,
-                                                  int attempt) {
+    private MigrationManifestEntry processContent(String sourceUrl, String contentType, WordPressContent content) {
         long start = System.currentTimeMillis();
         String key = buildKey(sourceUrl, contentType, content);
 
         try {
             TransformationResult result = transformationService.transformById(sourceUrl, content.getId(), contentType);
             long duration = System.currentTimeMillis() - start;
+            double trustScore = (result.finalState() != null) ? result.finalState().getTrustScore() : 0.0;
 
             if (result.success()) {
+                ledgerService.recordOutcome(content, result.outputPath(), MigrationStatus.SUCCESS, trustScore);
+                
+                // PRIME TIME: Record Redirect for SEO Chronicle (Bead 13)
+                seoRedirectService.recordRedirect(content.getLink(), content.getSlug());
+                
                 return new MigrationManifestEntry(
-                        key,
-                        sourceUrl,
-                        contentType,
-                        content.getId(),
-                        content.getSlug(),
-                        valueOrNull(content.getModifiedDate()),
-                        MigrationManifestEntry.Status.SUCCESS,
-                        result.outputPath(),
-                        null,
-                        attempt,
-                        duration,
-                        Instant.now()
+                        key, sourceUrl, contentType, content.getId(), content.getSlug(),
+                        valueOrNull(content.getModifiedDate()), MigrationManifestEntry.Status.SUCCESS,
+                        result.outputPath(), null, 1, duration, Instant.now()
                 );
             }
 
+            ledgerService.recordOutcome(content, null, MigrationStatus.FAILED, trustScore);
             return new MigrationManifestEntry(
-                    key,
-                    sourceUrl,
-                    contentType,
-                    content.getId(),
-                    content.getSlug(),
-                    valueOrNull(content.getModifiedDate()),
-                    MigrationManifestEntry.Status.FAILED,
-                    null,
-                    result.errorMessage(),
-                    attempt,
-                    duration,
-                    Instant.now()
+                    key, sourceUrl, contentType, content.getId(), content.getSlug(),
+                    valueOrNull(content.getModifiedDate()), MigrationManifestEntry.Status.FAILED,
+                    null, result.errorMessage(), 1, duration, Instant.now()
             );
         } catch (Exception e) {
-            long duration = System.currentTimeMillis() - start;
+            ledgerService.recordOutcome(content, null, MigrationStatus.FAILED, 0.0);
             return new MigrationManifestEntry(
-                    key,
-                    sourceUrl,
-                    contentType,
-                    content.getId(),
-                    content.getSlug(),
-                    valueOrNull(content.getModifiedDate()),
-                    MigrationManifestEntry.Status.FAILED,
-                    null,
-                    e.getMessage(),
-                    attempt,
-                    duration,
-                    Instant.now()
+                    key, sourceUrl, contentType, content.getId(), content.getSlug(),
+                    valueOrNull(content.getModifiedDate()), MigrationManifestEntry.Status.FAILED,
+                    null, e.getMessage(), 1, System.currentTimeMillis() - start, Instant.now()
             );
         }
-    }
-
-    private boolean isDeltaSkip(WordPressContent content) {
-        if (deltaSince == null || deltaSince.isBlank() || content == null || content.getModifiedDate() == null) {
-            return false;
-        }
-        try {
-            java.time.Instant cutoff = java.time.Instant.parse(deltaSince);
-            java.time.Instant modified = content.getModifiedDate()
-                    .atZone(java.time.ZoneId.systemDefault())
-                    .toInstant();
-            return modified.isBefore(cutoff);
-        } catch (Exception e) {
-            log.warn("Invalid migration.delta.since value: {}", deltaSince);
-            return false;
-        }
-    }
-
-    private MigrationManifestEntry buildSkippedEntry(String sourceUrl, String contentType, WordPressContent content,
-                                                     String reason) {
-        return new MigrationManifestEntry(
-                buildKey(sourceUrl, contentType, content),
-                sourceUrl,
-                contentType,
-                content.getId(),
-                content.getSlug(),
-                valueOrNull(content.getModifiedDate()),
-                MigrationManifestEntry.Status.SKIPPED,
-                null,
-                reason,
-                0,
-                0,
-                Instant.now()
-        );
     }
 
     private String buildKey(String sourceUrl, String contentType, WordPressContent content) {
-        String modified = valueOrNull(content.getModifiedDate());
         return String.join("|",
                 Objects.toString(sourceUrl, ""),
                 Objects.toString(contentType, ""),
-                Objects.toString(content.getId(), ""),
-                Objects.toString(modified, "")
+                Objects.toString(content.getId(), "")
         );
     }
 
@@ -291,9 +196,7 @@ public class BatchMigrationService {
     private void shutdownExecutor(ExecutorService executor) {
         executor.shutdown();
         try {
-            if (!executor.awaitTermination(30, TimeUnit.SECONDS)) {
-                executor.shutdownNow();
-            }
+            if (!executor.awaitTermination(30, TimeUnit.SECONDS)) executor.shutdownNow();
         } catch (InterruptedException e) {
             executor.shutdownNow();
             Thread.currentThread().interrupt();
@@ -303,16 +206,10 @@ public class BatchMigrationService {
     private int loadCheckpoint() {
         try {
             Path path = Path.of(checkpointPath);
-            if (!Files.exists(path)) {
-                return 1;
-            }
+            if (!Files.exists(path)) return 1;
             String raw = Files.readString(path).trim();
-            if (raw.isBlank()) {
-                return 1;
-            }
-            return Integer.parseInt(raw);
+            return raw.isBlank() ? 1 : Integer.parseInt(raw);
         } catch (Exception e) {
-            log.warn("Failed to load checkpoint; starting from page 1");
             return 1;
         }
     }
@@ -328,15 +225,11 @@ public class BatchMigrationService {
     }
 
     private List<String> parseCsv(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return List.of();
-        }
+        if (raw == null || raw.isBlank()) return List.of();
         List<String> items = new java.util.ArrayList<>();
         for (String part : raw.split(",")) {
             String value = part.trim();
-            if (!value.isEmpty()) {
-                items.add(value);
-            }
+            if (!value.isEmpty()) items.add(value);
         }
         return items;
     }
