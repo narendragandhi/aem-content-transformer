@@ -7,6 +7,7 @@ import com.example.aemtransformer.model.AemPage.PageContent;
 import com.example.aemtransformer.model.ComponentMapping;
 import com.example.aemtransformer.model.ComponentMapping.AemComponentType;
 import com.example.aemtransformer.model.ContentAnalysis;
+import com.example.aemtransformer.service.AssetLinkRewriterService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,11 +18,14 @@ import java.util.Map;
 
 /**
  * Agent responsible for generating AEM page structures from component mappings.
+ * Now includes Resilient Link Rewriting for Prime Time asset integrity.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class AemGeneratorAgent {
+
+    private final AssetLinkRewriterService linkRewriter;
 
     @Value("${aem.template-path:/conf/mysite/settings/wcm/templates/content-page}")
     private String templatePath = "/conf/mysite/settings/wcm/templates/content-page";
@@ -35,13 +39,6 @@ public class AemGeneratorAgent {
     @Value("${aem.cloudservice-configs:}")
     private String cloudServiceConfigs = "";
 
-    /**
-     * Generates an AEM page from content analysis and component mappings.
-     *
-     * @param analysis content analysis results
-     * @param mappings component mappings
-     * @return generated AEM page
-     */
     public AemPage generate(ContentAnalysis analysis, List<ComponentMapping> mappings) {
         log.info("Generating AEM page: {} with {} components",
                 analysis.getPageTitle(), mappings.size());
@@ -74,32 +71,7 @@ public class AemGeneratorAgent {
                 .content(pageContent)
                 .build();
 
-        log.info("AEM page generated successfully");
         return page;
-    }
-
-    private String resolveOptional(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private String[] splitCsv(String value) {
-        String trimmed = resolveOptional(value);
-        if (trimmed == null) {
-            return null;
-        }
-        String[] parts = trimmed.split(",");
-        List<String> cleaned = new java.util.ArrayList<>();
-        for (String part : parts) {
-            String segment = part.trim();
-            if (!segment.isEmpty()) {
-                cleaned.add(segment);
-            }
-        }
-        return cleaned.isEmpty() ? null : cleaned.toArray(new String[0]);
     }
 
     private AemComponent createComponent(ComponentMapping mapping) {
@@ -127,33 +99,39 @@ public class AemGeneratorAgent {
                 .componentName(mapping.getComponentName())
                 .text(getString(props, "jcr:title"))
                 .type(getString(props, "type", "h2"))
-                .linkURL(getString(props, "linkURL"))
+                .linkURL(linkRewriter.translateToDamPath(getString(props, "linkURL")))
                 .build();
     }
 
     private TextComponent createTextComponent(ComponentMapping mapping) {
         Map<String, Object> props = mapping.getProperties();
+        String originalText = getString(props, "text");
+        // PRIME TIME: Rewrite all internal asset links in rich text
+        String rewrittenText = linkRewriter.rewriteHtmlLinks(originalText);
+
         return TextComponent.builder()
                 .componentName(mapping.getComponentName())
-                .text(getString(props, "text"))
+                .text(rewrittenText)
                 .textIsRich(getBoolean(props, "textIsRich", true))
                 .build();
     }
 
     private ImageComponent createImageComponent(ComponentMapping mapping) {
         Map<String, Object> props = mapping.getProperties();
+        String sourceUrl = getString(props, "sourceUrl");
+        String damPath = linkRewriter.translateToDamPath(sourceUrl);
+
         return ImageComponent.builder()
                 .componentName(mapping.getComponentName())
-                .fileReference(getString(props, "fileReference"))
+                .fileReference(damPath)
                 .alt(getString(props, "alt"))
                 .caption(getString(props, "caption"))
-                .sourceUrl(getString(props, "sourceUrl"))
+                .sourceUrl(sourceUrl)
                 .build();
     }
 
     private ListComponent createListComponent(ComponentMapping mapping) {
         Map<String, Object> props = mapping.getProperties() != null ? mapping.getProperties() : Map.of();
-
         @SuppressWarnings("unchecked")
         List<String> items = (List<String>) props.get("items");
 
@@ -172,7 +150,6 @@ public class AemGeneratorAgent {
 
     private CarouselComponent createCarouselComponent(ComponentMapping mapping) {
         Map<String, Object> props = mapping.getProperties() != null ? mapping.getProperties() : Map.of();
-
         CarouselComponent carousel = CarouselComponent.builder()
                 .componentName(mapping.getComponentName())
                 .build();
@@ -182,16 +159,18 @@ public class AemGeneratorAgent {
         if (items != null) {
             int index = 0;
             for (Map<String, String> item : items) {
-                    ImageComponent image = ImageComponent.builder()
-                        .componentName("carousel_image_" + index++)
-                        .fileReference(item.get("fileReference"))
-                        .alt(item.get("alt"))
-                        .sourceUrl(item.get("sourceUrl"))
-                        .build();
-                    carousel.addItem(image);
-                }
+                String sourceUrl = item.get("sourceUrl");
+                String damPath = linkRewriter.translateToDamPath(sourceUrl);
+                
+                ImageComponent image = ImageComponent.builder()
+                    .componentName("carousel_image_" + index++)
+                    .fileReference(damPath)
+                    .alt(item.get("alt"))
+                    .sourceUrl(sourceUrl)
+                    .build();
+                carousel.addItem(image);
+            }
         }
-
         return carousel;
     }
 
@@ -201,7 +180,6 @@ public class AemGeneratorAgent {
         String sanitizedUrl = sanitizeUrl(url);
 
         if (sanitizedUrl == null) {
-            log.warn("Invalid or unsafe embed URL rejected: {}", url);
             return TextComponent.builder()
                     .componentName(mapping.getComponentName())
                     .text("<div class=\"embed-container\"><p>Embed content unavailable</p></div>")
@@ -216,40 +194,13 @@ public class AemGeneratorAgent {
                 .build();
     }
 
-    /**
-     * Sanitizes a URL to prevent XSS attacks.
-     * Only allows http/https protocols and escapes special characters.
-     */
     private String sanitizeUrl(String url) {
-        if (url == null || url.isBlank()) {
-            return null;
-        }
-
+        if (url == null || url.isBlank()) return null;
         String trimmed = url.trim();
-
-        // Only allow http and https protocols
-        if (!trimmed.toLowerCase().startsWith("http://") && !trimmed.toLowerCase().startsWith("https://")) {
-            return null;
-        }
-
-        // Block javascript: and data: URLs that might be disguised
+        if (!trimmed.toLowerCase().startsWith("http://") && !trimmed.toLowerCase().startsWith("https://")) return null;
         String lowerUrl = trimmed.toLowerCase();
-        if (lowerUrl.contains("javascript:") || lowerUrl.contains("data:") || lowerUrl.contains("vbscript:")) {
-            return null;
-        }
-
-        // Escape HTML special characters to prevent attribute breakout
-        return escapeHtmlAttribute(trimmed);
-    }
-
-    private String escapeHtmlAttribute(String value) {
-        if (value == null) return null;
-        return value
-                .replace("&", "&amp;")
-                .replace("\"", "&quot;")
-                .replace("'", "&#x27;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;");
+        if (lowerUrl.contains("javascript:") || lowerUrl.contains("data:") || lowerUrl.contains("vbscript:")) return null;
+        return trimmed.replace("&", "&amp;").replace("\"", "&quot;").replace("'", "&#x27;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     private ContainerComponent createContainerComponent(ComponentMapping mapping) {
@@ -272,9 +223,25 @@ public class AemGeneratorAgent {
     private boolean getBoolean(Map<String, Object> props, String key, boolean defaultValue) {
         if (props == null) return defaultValue;
         Object value = props.get(key);
-        if (value instanceof Boolean) {
-            return (Boolean) value;
-        }
+        if (value instanceof Boolean) return (Boolean) value;
         return defaultValue;
+    }
+
+    private String resolveOptional(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String[] splitCsv(String value) {
+        String trimmed = resolveOptional(value);
+        if (trimmed == null) return null;
+        String[] parts = trimmed.split(",");
+        List<String> cleaned = new java.util.ArrayList<>();
+        for (String part : parts) {
+            String segment = part.trim();
+            if (!segment.isEmpty()) cleaned.add(segment);
+        }
+        return cleaned.isEmpty() ? null : cleaned.toArray(new String[0]);
     }
 }

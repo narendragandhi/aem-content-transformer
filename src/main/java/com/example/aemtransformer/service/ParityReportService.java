@@ -20,6 +20,10 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
 
+/**
+ * Bead for Automated Quality Assurance.
+ * Calculates a "Trust Score" by comparing source and target structures.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -29,6 +33,9 @@ public class ParityReportService {
 
     @Value("${migration.parity.enabled:true}")
     private boolean enabled;
+
+    @Value("${migration.parity.threshold:0.8}")
+    private double trustThreshold;
 
     @Value("${migration.parity.filename:parity.jsonl}")
     private String parityFilename;
@@ -54,6 +61,10 @@ public class ParityReportService {
         int sourceTextLength = safeLength(content.getContentHtml());
         int aemTextLength = countTextLength(page.getContent().getRoot());
 
+        // PRIME TIME: Trust Score Calculation
+        double trustScore = calculateTrustScore(titleMatch, sourceImageCount, aemImageCount, sourceTextLength, aemTextLength);
+        boolean isComplete = trustScore >= trustThreshold;
+
         ParityReportEntry entry = new ParityReportEntry(
                 buildKey(content),
                 content.getSlug(),
@@ -64,11 +75,42 @@ public class ParityReportService {
                 aemImageCount,
                 sourceTextLength,
                 aemTextLength,
+                trustScore,
+                isComplete,
                 outputPathValue,
                 Instant.now()
         );
 
         writeEntry(entry);
+    }
+
+    private double calculateTrustScore(boolean titleMatch, int srcImg, int aemImg, int srcLen, int aemLen) {
+        double score = 0.0;
+        
+        // Title weights 20%
+        if (titleMatch) score += 0.2;
+        
+        // Image parity weights 40%
+        if (srcImg == 0 && aemImg == 0) {
+            score += 0.4;
+        } else if (srcImg > 0) {
+            double ratio = (double) Math.min(srcImg, aemImg) / Math.max(srcImg, aemImg);
+            score += (0.4 * ratio);
+        }
+
+        // Content volume weights 40%
+        if (srcLen > 0) {
+            // AEM content is usually shorter due to stripping HTML boilerplate
+            // We use a 0.7 to 1.3 tolerance window
+            double ratio = (double) aemLen / srcLen;
+            if (ratio >= 0.6 && ratio <= 1.4) {
+                score += 0.4;
+            } else {
+                score += (0.4 * Math.min(ratio, 1.0));
+            }
+        }
+
+        return Math.min(1.0, score);
     }
 
     private void writeEntry(ParityReportEntry entry) {
@@ -91,7 +133,8 @@ public class ParityReportService {
         stack.push(root);
         while (!stack.isEmpty()) {
             ComponentNode node = stack.pop();
-            if ("core/wcm/components/image/v3/image".equals(node.getResourceType())) {
+            // Match common AEM image resource types
+            if (node.getResourceType() != null && node.getResourceType().contains("image")) {
                 count++;
             }
             if (node.getChildren() != null) {
@@ -112,9 +155,14 @@ public class ParityReportService {
         stack.push(root);
         while (!stack.isEmpty()) {
             ComponentNode node = stack.pop();
-            if (node.getProperties() != null && node.getProperties().containsKey("text")) {
-                Object text = node.getProperties().get("text");
-                length += safeLength(text != null ? text.toString() : null);
+            if (node.getProperties() != null) {
+                // Sum up text properties from common components
+                if (node.getProperties().containsKey("text")) {
+                    length += safeLength(node.getProperties().get("text").toString());
+                }
+                if (node.getProperties().containsKey("jcr:title")) {
+                    length += safeLength(node.getProperties().get("jcr:title").toString());
+                }
             }
             if (node.getChildren() != null) {
                 for (ComponentNode child : node.getChildren().values()) {
