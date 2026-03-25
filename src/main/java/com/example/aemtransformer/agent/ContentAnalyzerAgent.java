@@ -40,6 +40,7 @@ public class ContentAnalyzerAgent {
                 .pageTitle(content.getTitleText())
                 .pageDescription(cleanHtml(content.getExcerptText()))
                 .blocks(blocks)
+                .metadata(content.getMeta()) // Capture ACF and other meta fields
                 .totalImages(countBlocksByType(blocks, ContentBlock.BlockType.IMAGE))
                 .totalHeadings(countBlocksByType(blocks, ContentBlock.BlockType.HEADING))
                 .hasGallery(hasBlockType(blocks, ContentBlock.BlockType.GALLERY))

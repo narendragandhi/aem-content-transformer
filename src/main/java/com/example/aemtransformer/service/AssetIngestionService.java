@@ -2,6 +2,8 @@ package com.example.aemtransformer.service;
 
 import com.example.aemtransformer.model.AemPage;
 import com.example.aemtransformer.model.AemPage.ComponentNode;
+import com.example.aemtransformer.model.AssetLedgerEntry;
+import com.example.aemtransformer.repository.AssetLedgerRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import lombok.RequiredArgsConstructor;
@@ -23,10 +25,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
- * Downloads external asset binaries and writes a minimal DAM asset structure
- * into the content package under jcr_root/content/dam.
+ * Downloads external asset binaries and writes a minimal DAM asset structure.
+ * Includes Global Asset Deduplication (Bead 12) via SHA-256 hash checking.
  */
 @Slf4j
 @Service
@@ -38,6 +41,7 @@ public class AssetIngestionService {
     private final ObjectMapper objectMapper;
     private final RestClient.Builder restClientBuilder;
     private final RateLimiterService rateLimiter;
+    private final AssetLedgerRepository assetLedgerRepository;
 
     @Value("${aem.asset.download:true}")
     private boolean assetDownloadEnabled;
@@ -88,58 +92,39 @@ public class AssetIngestionService {
     private int assetUploadDelayMs;
 
     public void ingestAssets(AemPage page, Path packageRoot) {
-        if (!assetDownloadEnabled) {
-            log.info("Asset download disabled; skipping DAM ingestion.");
-            return;
-        }
-        if (page == null || page.getContent() == null || page.getContent().getRoot() == null) {
-            return;
-        }
+        if (!assetDownloadEnabled) return;
+        if (page == null || page.getContent() == null || page.getContent().getRoot() == null) return;
 
         Path jcrRoot = packageRoot.resolve("jcr_root");
         List<AssetRef> refs = new ArrayList<>();
         collectAssetRefs(page.getContent().getRoot(), refs);
 
-        if (refs.isEmpty()) {
-            return;
-        }
+        if (refs.isEmpty()) return;
 
         Map<String, AssetManifestEntry> manifest = new LinkedHashMap<>();
         RestClient client = restClientBuilder.build();
 
         for (AssetRef ref : refs) {
-            String key = ref.fileReference();
-            if (manifest.containsKey(key)) {
-                continue;
-            }
+            if (manifest.containsKey(ref.fileReference())) continue;
             AssetManifestEntry entry = downloadAndWriteAsset(client, jcrRoot, ref);
-            manifest.put(key, entry);
+            manifest.put(ref.fileReference(), entry);
         }
 
         writeManifest(packageRoot, manifest);
     }
 
     private void collectAssetRefs(ComponentNode node, List<AssetRef> refs) {
-        if (node == null) {
-            return;
-        }
-
+        if (node == null) return;
         Map<String, Object> props = node.getProperties();
         if (props != null) {
-            Object fileReference = props.get("fileReference");
-            Object sourceUrl = props.get("sourceUrl");
-            if (fileReference instanceof String fileRef
-                    && sourceUrl instanceof String src
-                    && fileRef.startsWith(DAM_PREFIX)
-                    && (src.startsWith("http://") || src.startsWith("https://"))) {
-                refs.add(new AssetRef(fileRef, src));
+            Object fileRef = props.get("fileReference");
+            Object srcUrl = props.get("sourceUrl");
+            if (fileRef instanceof String f && srcUrl instanceof String s && f.startsWith(DAM_PREFIX)) {
+                refs.add(new AssetRef(f, s));
             }
         }
-
         if (node.getChildren() != null) {
-            for (ComponentNode child : node.getChildren().values()) {
-                collectAssetRefs(child, refs);
-            }
+            for (ComponentNode child : node.getChildren().values()) collectAssetRefs(child, refs);
         }
     }
 
@@ -149,24 +134,36 @@ public class AssetIngestionService {
 
         try {
             byte[] data = downloadWithRetry(client, sourceUrl);
+            if (data == null || data.length == 0) return AssetManifestEntry.failed(damPath, sourceUrl, "Empty response");
+            if (assetMaxBytes > 0 && data.length > assetMaxBytes) return AssetManifestEntry.failed(damPath, sourceUrl, "Exceeds max size");
 
-            if (data == null || data.length == 0) {
-                return AssetManifestEntry.failed(damPath, sourceUrl, "Empty response");
-            }
-
-            if (assetMaxBytes > 0 && data.length > assetMaxBytes) {
-                return AssetManifestEntry.failed(damPath, sourceUrl,
-                        "Asset exceeds max size: " + data.length + " bytes");
+            String checksum = sha256Hex(data);
+            
+            // PRIME TIME: Global Deduplication Check (Bead 12)
+            Optional<AssetLedgerEntry> existing = assetLedgerRepository.findByChecksum(checksum);
+            if (existing.isPresent()) {
+                log.info("Asset deduplicated via checksum {}: {} -> {}", checksum, sourceUrl, existing.get().getDamPath());
+                return AssetManifestEntry.success(existing.get().getDamPath(), sourceUrl, null, data.length, existing.get().getMimeType(), "deduplicated", checksum);
             }
 
             Path assetDir = jcrRoot.resolve(damPath.replaceFirst("^/", ""));
             Files.createDirectories(assetDir);
-
             writeAssetContent(assetDir, damPath, sourceUrl, data);
 
             String mimeType = guessMimeType(damPath, data);
             String uploadStatus = maybeUploadToAem(client, damPath, data, mimeType);
-            String checksum = sha256Hex(data);
+            
+            // Record in Ledger
+            AssetLedgerEntry entry = AssetLedgerEntry.builder()
+                    .checksum(checksum)
+                    .damPath(damPath)
+                    .sourceUrl(sourceUrl)
+                    .mimeType(mimeType)
+                    .fileSize((long) data.length)
+                    .ingestedAt(Instant.now())
+                    .build();
+            assetLedgerRepository.save(entry);
+
             return AssetManifestEntry.success(damPath, sourceUrl, assetDir, data.length, mimeType, uploadStatus, checksum);
         } catch (Exception e) {
             log.warn("Failed to ingest asset {} from {}", damPath, sourceUrl, e);
@@ -177,16 +174,13 @@ public class AssetIngestionService {
     }
 
     private void writeAssetContent(Path assetDir, String damPath, String sourceUrl, byte[] data) throws IOException {
-        ObjectMapper prettyMapper = objectMapper.copy()
-                .enable(SerializationFeature.INDENT_OUTPUT);
-
+        ObjectMapper prettyMapper = objectMapper.copy().enable(SerializationFeature.INDENT_OUTPUT);
         Map<String, Object> assetNode = new HashMap<>();
         assetNode.put("jcr:primaryType", "dam:Asset");
         prettyMapper.writeValue(assetDir.resolve(".content.json").toFile(), assetNode);
 
         Path jcrContentDir = assetDir.resolve("jcr:content");
         Files.createDirectories(jcrContentDir);
-
         Map<String, Object> assetContent = new HashMap<>();
         assetContent.put("jcr:primaryType", "dam:AssetContent");
         assetContent.put("jcr:mimeType", guessMimeType(damPath, data));
@@ -207,17 +201,12 @@ public class AssetIngestionService {
         renditions.put("jcr:primaryType", "nt:folder");
         prettyMapper.writeValue(renditionsDir.resolve(".content.json").toFile(), renditions);
 
-        Path originalFile = renditionsDir.resolve("original");
-        Files.write(originalFile, data);
+        Files.write(renditionsDir.resolve("original"), data);
     }
 
     private void writeManifest(Path packageRoot, Map<String, AssetManifestEntry> manifest) {
-        if (manifest.isEmpty()) {
-            return;
-        }
-
-        ObjectMapper prettyMapper = objectMapper.copy()
-                .enable(SerializationFeature.INDENT_OUTPUT);
+        if (manifest.isEmpty()) return;
+        ObjectMapper prettyMapper = objectMapper.copy().enable(SerializationFeature.INDENT_OUTPUT);
         try {
             prettyMapper.writeValue(packageRoot.resolve("asset-manifest.json").toFile(), manifest.values());
         } catch (IOException e) {
@@ -226,9 +215,7 @@ public class AssetIngestionService {
     }
 
     private String extractTitle(String damPath) {
-        if (damPath == null || damPath.isBlank()) {
-            return "asset";
-        }
+        if (damPath == null || damPath.isBlank()) return "asset";
         String[] parts = damPath.split("/");
         String last = parts.length == 0 ? damPath : parts[parts.length - 1];
         return last.isBlank() ? "asset" : last;
@@ -240,14 +227,7 @@ public class AssetIngestionService {
     }
 
     private String maybeUploadToAem(RestClient client, String damPath, byte[] data, String mimeType) {
-        if (!assetApiEnabled) {
-            return "skipped";
-        }
-        if (assetApiUploadUrlTemplate == null || assetApiUploadUrlTemplate.isBlank()) {
-            log.warn("Asset API enabled but upload URL template is not configured.");
-            return "skipped";
-        }
-
+        if (!assetApiEnabled || assetApiUploadUrlTemplate == null || assetApiUploadUrlTemplate.isBlank()) return "skipped";
         String uploadUrl = assetApiUploadUrlTemplate.replace("{damPath}", damPath);
         int attempts = 0;
         while (attempts < Math.max(1, assetRetryAttempts)) {
@@ -257,12 +237,9 @@ public class AssetIngestionService {
                 rateLimiter.acquireAem();
                 applyAuth(request);
                 request.header(HttpHeaders.CONTENT_TYPE, mimeType != null ? mimeType : MediaType.APPLICATION_OCTET_STREAM_VALUE)
-                        .body(data)
-                        .retrieve()
-                        .toBodilessEntity();
+                        .body(data).retrieve().toBodilessEntity();
                 throttle(assetUploadDelayMs);
-                boolean verified = verifyAssetAvailable(client, damPath);
-                return verified ? "uploaded" : "verify_failed";
+                return verifyAssetAvailable(client, damPath) ? "uploaded" : "verify_failed";
             } catch (Exception e) {
                 log.warn("Asset API upload failed (attempt {}/{}): {}", attempts, assetRetryAttempts, damPath);
                 throttle(assetRetryDelayMs * attempts);
@@ -273,46 +250,26 @@ public class AssetIngestionService {
 
     private void applyAuth(RestClient.RequestBodySpec request) {
         String type = assetApiAuthType != null ? assetApiAuthType.trim().toLowerCase() : "";
-        if ("basic".equals(type)) {
-            if (assetApiAuthUser != null && assetApiAuthPassword != null) {
-                String basic = java.util.Base64.getEncoder()
-                        .encodeToString((assetApiAuthUser + ":" + assetApiAuthPassword).getBytes());
-                request.header(HttpHeaders.AUTHORIZATION, "Basic " + basic);
-            }
-            return;
-        }
-        if ("bearer".equals(type)) {
-            if (assetApiAuthToken != null && !assetApiAuthToken.isBlank()) {
-                request.header(HttpHeaders.AUTHORIZATION, "Bearer " + assetApiAuthToken.trim());
-            }
+        if ("basic".equals(type) && assetApiAuthUser != null && assetApiAuthPassword != null) {
+            String basic = java.util.Base64.getEncoder().encodeToString((assetApiAuthUser + ":" + assetApiAuthPassword).getBytes());
+            request.header(HttpHeaders.AUTHORIZATION, "Basic " + basic);
+        } else if ("bearer".equals(type) && assetApiAuthToken != null && !assetApiAuthToken.isBlank()) {
+            request.header(HttpHeaders.AUTHORIZATION, "Bearer " + assetApiAuthToken.trim());
         }
     }
 
     private void applyAuth(RestClient.RequestHeadersSpec<?> request) {
         String type = assetApiAuthType != null ? assetApiAuthType.trim().toLowerCase() : "";
-        if ("basic".equals(type)) {
-            if (assetApiAuthUser != null && assetApiAuthPassword != null) {
-                String basic = java.util.Base64.getEncoder()
-                        .encodeToString((assetApiAuthUser + ":" + assetApiAuthPassword).getBytes());
-                request.header(HttpHeaders.AUTHORIZATION, "Basic " + basic);
-            }
-            return;
-        }
-        if ("bearer".equals(type)) {
-            if (assetApiAuthToken != null && !assetApiAuthToken.isBlank()) {
-                request.header(HttpHeaders.AUTHORIZATION, "Bearer " + assetApiAuthToken.trim());
-            }
+        if ("basic".equals(type) && assetApiAuthUser != null && assetApiAuthPassword != null) {
+            String basic = java.util.Base64.getEncoder().encodeToString((assetApiAuthUser + ":" + assetApiAuthPassword).getBytes());
+            request.header(HttpHeaders.AUTHORIZATION, "Basic " + basic);
+        } else if ("bearer".equals(type) && assetApiAuthToken != null && !assetApiAuthToken.isBlank()) {
+            request.header(HttpHeaders.AUTHORIZATION, "Bearer " + assetApiAuthToken.trim());
         }
     }
 
     private boolean verifyAssetAvailable(RestClient client, String damPath) {
-        if (!assetVerifyEnabled) {
-            return true;
-        }
-        if (assetVerifyUrlTemplate == null || assetVerifyUrlTemplate.isBlank()) {
-            log.warn("Asset verify enabled but verify URL template is not configured.");
-            return false;
-        }
+        if (!assetVerifyEnabled || assetVerifyUrlTemplate == null || assetVerifyUrlTemplate.isBlank()) return true;
         String verifyUrl = assetVerifyUrlTemplate.replace("{damPath}", damPath);
         long deadline = System.currentTimeMillis() + Math.max(0, assetVerifyTimeoutMs);
         while (System.currentTimeMillis() <= deadline) {
@@ -331,27 +288,12 @@ public class AssetIngestionService {
 
     private record AssetRef(String fileReference, String sourceUrl) {}
 
-    private record AssetManifestEntry(
-            String damPath,
-            String sourceUrl,
-            String localPath,
-            int bytes,
-            String mimeType,
-            String status,
-            String uploadStatus,
-            String checksum,
-            String error
-    ) {
-        static AssetManifestEntry success(String damPath, String sourceUrl, Path localPath, int bytes, String mimeType,
-                                          String uploadStatus, String checksum) {
-            return new AssetManifestEntry(damPath, sourceUrl,
-                    localPath != null ? localPath.toString() : null,
-                    bytes, mimeType, "success", uploadStatus, checksum, null);
+    private record AssetManifestEntry(String damPath, String sourceUrl, String localPath, int bytes, String mimeType, String status, String uploadStatus, String checksum, String error) {
+        static AssetManifestEntry success(String damPath, String sourceUrl, Path localPath, int bytes, String mimeType, String uploadStatus, String checksum) {
+            return new AssetManifestEntry(damPath, sourceUrl, localPath != null ? localPath.toString() : null, bytes, mimeType, "success", uploadStatus, checksum, null);
         }
-
         static AssetManifestEntry failed(String damPath, String sourceUrl, String error) {
-            return new AssetManifestEntry(damPath, sourceUrl, null, 0,
-                    null, "failed", "failed", null, Objects.toString(error, "unknown"));
+            return new AssetManifestEntry(damPath, sourceUrl, null, 0, null, "failed", "failed", null, Objects.toString(error, "unknown"));
         }
     }
 
@@ -361,10 +303,7 @@ public class AssetIngestionService {
             attempts++;
             try {
                 rateLimiter.acquireWp();
-                return client.get()
-                        .uri(sourceUrl)
-                        .retrieve()
-                        .body(byte[].class);
+                return client.get().uri(sourceUrl).retrieve().body(byte[].class);
             } catch (Exception e) {
                 log.warn("Asset download failed (attempt {}/{}): {}", attempts, assetRetryAttempts, sourceUrl);
                 throttle(assetRetryDelayMs * attempts);
@@ -378,9 +317,7 @@ public class AssetIngestionService {
             java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(data);
             StringBuilder sb = new StringBuilder();
-            for (byte b : hash) {
-                sb.append(String.format("%02x", b));
-            }
+            for (byte b : hash) sb.append(String.format("%02x", b));
             return sb.toString();
         } catch (Exception e) {
             return null;
@@ -388,13 +325,7 @@ public class AssetIngestionService {
     }
 
     private void throttle(int delayMs) {
-        if (delayMs <= 0) {
-            return;
-        }
-        try {
-            Thread.sleep(delayMs);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        if (delayMs <= 0) return;
+        try { Thread.sleep(delayMs); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
     }
 }

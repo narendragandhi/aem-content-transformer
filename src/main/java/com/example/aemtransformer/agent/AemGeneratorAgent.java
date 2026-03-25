@@ -67,6 +67,15 @@ public class AemGeneratorAgent {
                 .root(rootNode)
                 .build();
 
+        // PRIME TIME: Map WordPress Meta/ACF fields to AEM JCR Properties (Bead 10)
+        if (analysis.getMetadata() != null) {
+            analysis.getMetadata().forEach((key, value) -> {
+                if (value != null) {
+                    pageContent.addMetadata(key, value);
+                }
+            });
+        }
+
         AemPage page = AemPage.builder()
                 .content(pageContent)
                 .build();

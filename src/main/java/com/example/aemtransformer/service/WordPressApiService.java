@@ -65,10 +65,17 @@ public class WordPressApiService {
      * Fetches a single post by ID from the WordPress site.
      */
     public WordPressContent fetchPost(String baseUrl, Long postId) {
-        String fullUrl = buildUrl(baseUrl, "/posts/" + postId);
+        String fullUrl = buildUrl(baseUrl, "/posts/" + postId + "?_embed=true");
         log.info("Fetching WordPress post from: {}", fullUrl);
 
-        String response = executeWithRetry(baseUrl, apiPath + "/posts/" + postId, fullUrl);
+        RestClient client = createClient(baseUrl);
+        String response = executeWithRetry(() -> client.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path(apiPath + "/posts/" + postId)
+                        .queryParam("_embed", true)
+                        .build())
+                .retrieve()
+                .body(String.class), fullUrl);
         return parseResponse(response, WordPressContent.class, fullUrl);
     }
 
@@ -76,10 +83,17 @@ public class WordPressApiService {
      * Fetches a single page by ID from the WordPress site.
      */
     public WordPressContent fetchPage(String baseUrl, Long pageId) {
-        String fullUrl = buildUrl(baseUrl, "/pages/" + pageId);
+        String fullUrl = buildUrl(baseUrl, "/pages/" + pageId + "?_embed=true");
         log.info("Fetching WordPress page from: {}", fullUrl);
 
-        String response = executeWithRetry(baseUrl, apiPath + "/pages/" + pageId, fullUrl);
+        RestClient client = createClient(baseUrl);
+        String response = executeWithRetry(() -> client.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path(apiPath + "/pages/" + pageId)
+                        .queryParam("_embed", true)
+                        .build())
+                .retrieve()
+                .body(String.class), fullUrl);
         return parseResponse(response, WordPressContent.class, fullUrl);
     }
 

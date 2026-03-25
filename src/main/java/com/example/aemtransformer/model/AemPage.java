@@ -1,5 +1,7 @@
 package com.example.aemtransformer.model;
 
+import com.fasterxml.jackson.annotation.JsonAnyGetter;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -65,7 +67,24 @@ public class AemPage implements Serializable {
         @JsonProperty("cq:cloudserviceconfigs")
         private String[] cloudServiceConfigs;
 
+        /**
+         * Dynamic metadata fields (ACF mapping).
+         */
+        @JsonIgnore
+        @Builder.Default
+        private Map<String, Object> metadata = new LinkedHashMap<>();
+
         private ComponentNode root;
+
+        @JsonAnyGetter
+        public Map<String, Object> getMetadata() {
+            return metadata;
+        }
+
+        public void addMetadata(String key, Object value) {
+            if (metadata == null) metadata = new LinkedHashMap<>();
+            metadata.put(key, value);
+        }
     }
 
     @Data
@@ -102,17 +121,5 @@ public class AemPage implements Serializable {
             }
             children.put(name, child);
         }
-    }
-
-    public static AemPage create(String title, String description) {
-        return AemPage.builder()
-                .content(PageContent.builder()
-                        .title(title)
-                        .description(description)
-                        .root(ComponentNode.builder()
-                                .resourceType("core/wcm/components/container/v1/container")
-                                .build())
-                        .build())
-                .build();
     }
 }
